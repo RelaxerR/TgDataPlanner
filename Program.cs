@@ -1,11 +1,17 @@
 ﻿using DefaultNamespace;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Telegram.Bot;
-// using MyDndBot.Data;
-// using MyDndBot.Telegram;
+using TgDataPlanner.Telegram;
+using TgDataPlanner.Telegram.Handlers;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// Настройка логирования
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.SetMinimumLevel(LogLevel.Information); 
 
 // 1. Регистрация настроек (токен и БД)
 var botToken = builder.Configuration["BotToken"];
@@ -24,9 +30,11 @@ builder.Services.AddDbContext<AppDbContext>();
 
 // 4. Регистрация наших сервисов (указываем классы-обработчики)
 builder.Services.AddScoped<UpdateHandler>(); 
+builder.Services.AddScoped<CommandHandler>();
+builder.Services.AddScoped<CallbackHandler>();
 
 // Регистрируем фоновые службы (наследуются от BackgroundService)
-// TODO: builder.Services.AddHostedService<BotBackgroundService>(); 
+builder.Services.AddHostedService<BotBackgroundService>(); 
 // TODO: builder.Services.AddHostedService<ReminderService>();
 
 using var host = builder.Build();
