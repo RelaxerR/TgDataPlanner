@@ -12,7 +12,8 @@ public class AppDbContext : DbContext
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         // Для начала используем SQLite
-        optionsBuilder.UseSqlite("Data Source=dnd_planner.db");
+        var dbPath = Path.Combine(AppContext.BaseDirectory, "../../../dnd_planner.db");
+        optionsBuilder.UseSqlite($"Data Source={dbPath}");
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

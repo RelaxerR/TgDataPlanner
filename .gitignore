@@ -58,3 +58,7 @@ nunit-*.xml
 
 # Конфиденциальные данные
 appsettings.json
+# SQLite database files
+*.db
+*.db-wal
+*.db-shm

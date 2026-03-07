@@ -42,9 +42,11 @@ using var host = builder.Build();
 // Автоматическое применение миграций при старте
 using (var scope = host.Services.CreateScope())
 {
-    // Указываем в скобках <AppDbContext>, чтобы компилятор понял, что достать из контейнера
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+    
+    var created = db.Database.EnsureCreated();
+    logger.LogInformation(created ? ">>> База данных успешно создана." : ">>> База данных уже существует.");
 }
 
 await host.RunAsync();
