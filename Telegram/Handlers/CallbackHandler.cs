@@ -91,6 +91,11 @@ public class CallbackHandler : BaseHandler
     private async Task RouteCallbackAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
     {
         var data = callbackQuery.Data;
+        if (data is null)
+        {
+            _logger.LogError("Попытка маршрутизации callback без данных от пользователя {UserId}", userId);
+            return;
+        }
 
         if (data.StartsWith(CallbackPrefixes.ConfirmTime) && !IsAdmin(userId))
         {
@@ -327,13 +332,13 @@ public class CallbackHandler : BaseHandler
         }
 
         var groupId = int.Parse(callbackQuery.Data!.Replace(CallbackPrefixes.StartPlan, string.Empty));
-        var minDurationHours = 3; // TODO: вынести в конфигурацию или добавить параметр
+        const int minDurationHours = 3; // TODO: вынести в конфигурацию или добавить параметр
 
         _logger.LogInformation("Запуск поиска окон для группы {GroupId}, мин. длительность: {Hours}ч", groupId, minDurationHours);
 
         var intersections = await SchedulingService.FindIntersections(groupId, minDurationHours);
 
-        if (!intersections.Any())
+        if (intersections.Count == 0)
         {
             await EditTextAsync(
                 callbackQuery,
@@ -384,14 +389,13 @@ public class CallbackHandler : BaseHandler
             : "Без группы";
 
         await EditTextAsync(callbackQuery, "✅ Данные сохранены!", ct: ct);
-
-        // TODO: раскомментировать при необходимости
-        // await NotifyMainChatAsync(
-        //     $"🔔 **{player.Username}** [{groupNames}] завершил заполнение расписания!",
-        //     ct);
+        
+        await NotifyMainChatAsync(
+            $"🔔 **{player.Username}** [{groupNames}] завершил заполнение расписания!",
+            ct);
 
         _logger.LogInformation(
-            "Пользователь {UserId} [{Username}] завершил заполнение расписания для групп: {Groups}",
+            "Пользователь {UserId} [@{Username}] завершил заполнение расписания для групп: {Groups}",
             userId, player.Username, groupNames);
 
         await AnswerCallbackAsync(callbackQuery, ct: ct);

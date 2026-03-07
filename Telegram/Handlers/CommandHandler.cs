@@ -73,17 +73,16 @@ public class CommandHandler : BaseHandler
     {
         var player = await Db.Players.FindAsync([telegramId], ct);
 
-        if (player is null)
+        if (player is not null) return player;
+        
+        player = new Player
         {
-            player = new Player
-            {
-                TelegramId = telegramId,
-                Username = username ?? "Unknown"
-            };
-            Db.Players.Add(player);
-            await Db.SaveChangesAsync(ct);
-            _logger.LogInformation("Создан новый игрок: {TelegramId} [{Username}]", telegramId, username);
-        }
+            TelegramId = telegramId,
+            Username = username ?? "Unknown"
+        };
+        Db.Players.Add(player);
+        await Db.SaveChangesAsync(ct);
+        _logger.LogInformation("Создан новый игрок: {TelegramId} [{Username}]", telegramId, username);
 
         return player;
     }
@@ -98,13 +97,12 @@ public class CommandHandler : BaseHandler
         string text,
         CancellationToken ct)
     {
-        if (player.CurrentState == "AwaitingGroupName")
-        {
-            await FinalizeGroupCreationAsync(message, player, text, ct);
-            return true;
-        }
+        if (player.CurrentState != "AwaitingGroupName")
+            return false;
+        
+        await FinalizeGroupCreationAsync(message, player, text, ct);
+        return true;
 
-        return false;
     }
 
     /// <summary>
@@ -245,7 +243,7 @@ public class CommandHandler : BaseHandler
     {
         var groups = await Db.Groups.ToListAsync(ct);
 
-        if (!groups.Any())
+        if (groups.Count == 0)
         {
             await SendTextAsync(message.Chat.Id, "❌ Групп пока нет. Мастер должен создать их через /group", ct: ct);
             return;
@@ -266,7 +264,7 @@ public class CommandHandler : BaseHandler
     /// </summary>
     private async Task HandleLeaveCommandAsync(Message message, Player player, CancellationToken ct)
     {
-        if (!player.Groups.Any())
+        if (player.Groups.Count == 0)
         {
             await SendTextAsync(message.Chat.Id, "🛡 Вы пока не состоите ни в одной группе.", ct: ct);
             return;
@@ -287,27 +285,23 @@ public class CommandHandler : BaseHandler
     /// </summary>
     private async Task HandleTimeZoneCommandAsync(Message message, CancellationToken ct)
     {
-        var keyboard = new InlineKeyboardMarkup(new[]
-        {
-            new[]
-            {
+        var keyboard = new InlineKeyboardMarkup([
+            [
                 InlineKeyboardButton.WithCallbackData("UTC -1", "set_tz_-1"),
                 InlineKeyboardButton.WithCallbackData("UTC +0", "set_tz_0"),
                 InlineKeyboardButton.WithCallbackData("UTC +1", "set_tz_1")
-            },
-            new[]
-            {
+            ],
+            [
                 InlineKeyboardButton.WithCallbackData("UTC +2", "set_tz_2"),
                 InlineKeyboardButton.WithCallbackData("UTC +3 (МСК)", "set_tz_3"),
                 InlineKeyboardButton.WithCallbackData("UTC +4 (ИЖ)", "set_tz_4")
-            },
-            new[]
-            {
+            ],
+            [
                 InlineKeyboardButton.WithCallbackData("UTC +5", "set_tz_5"),
                 InlineKeyboardButton.WithCallbackData("UTC +6", "set_tz_6"),
                 InlineKeyboardButton.WithCallbackData("UTC +7", "set_tz_7")
-            }
-        });
+            ]
+        ]);
 
         await SendTextAsync(
             message.Chat.Id,
@@ -361,7 +355,7 @@ public class CommandHandler : BaseHandler
 
         var groups = await Db.Groups.ToListAsync(ct);
 
-        if (!groups.Any())
+        if (groups.Count == 0)
         {
             await SendTextAsync(message.Chat.Id, "❌ Сначала создайте группу через /group", ct: ct);
             return;

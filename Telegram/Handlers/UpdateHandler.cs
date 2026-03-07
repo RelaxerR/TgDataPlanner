@@ -42,7 +42,7 @@ public class UpdateHandler : BaseHandler
     /// <param name="update">Объект обновления.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения обработки.</returns>
-    public async Task HandleUpdateAsync(Update update, CancellationToken ct)
+    public async Task HandleUpdateAsync(Update? update, CancellationToken ct)
     {
         if (update is null)
         {
@@ -66,6 +66,28 @@ public class UpdateHandler : BaseHandler
                 await HandleCallbackQueryAsync(update.CallbackQuery, ct);
                 break;
 
+            case UpdateType.Unknown:
+            case UpdateType.InlineQuery:
+            case UpdateType.ChosenInlineResult:
+            case UpdateType.EditedMessage:
+            case UpdateType.ChannelPost:
+            case UpdateType.EditedChannelPost:
+            case UpdateType.ShippingQuery:
+            case UpdateType.PreCheckoutQuery:
+            case UpdateType.Poll:
+            case UpdateType.PollAnswer:
+            case UpdateType.MyChatMember:
+            case UpdateType.ChatMember:
+            case UpdateType.ChatJoinRequest:
+            case UpdateType.MessageReaction:
+            case UpdateType.MessageReactionCount:
+            case UpdateType.ChatBoost:
+            case UpdateType.RemovedChatBoost:
+            case UpdateType.BusinessConnection:
+            case UpdateType.BusinessMessage:
+            case UpdateType.EditedBusinessMessage:
+            case UpdateType.DeletedBusinessMessages:
+            case UpdateType.PurchasedPaidMedia:
             default:
                 _logger.LogDebug("Пропущено обновление типа {Type}: не поддерживается", update.Type);
                 break;
