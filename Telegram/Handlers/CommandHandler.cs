@@ -93,6 +93,28 @@ public class CommandHandler(
                 replyMarkup: AvailabilityMenu.GetDateCalendar(player.TimeZoneOffset),
                 cancellationToken: ct);
         }
+        
+        // Внутри HandleAsync
+        if (text.StartsWith("/plan"))
+        {
+            if (userId != _adminId) return;
+
+            var groups = await db.Groups.ToListAsync(ct);
+            if (groups.Count == 0)
+            {
+                await botClient.SendMessage(message.Chat.Id, "❌ Сначала создайте группу через /create_group", cancellationToken: ct);
+                return;
+            }
+
+            var buttons = groups.Select(g => 
+                new[] { InlineKeyboardButton.WithCallbackData(g.Name, $"start_plan_{g.Id}") });
+    
+            await botClient.SendMessage(
+                message.Chat.Id,
+                "🎯 **Запуск планирования**\nВыберите группу, для которой нужно найти время:",
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: ct);
+        }
 
     }
     

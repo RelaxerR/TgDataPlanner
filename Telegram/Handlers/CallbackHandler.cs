@@ -5,7 +5,9 @@ using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 using TgDataPlanner.Data.Entities;
+using TgDataPlanner.Services.Scheduling;
 using TgDataPlanner.Telegram.Menus;
 
 namespace TgDataPlanner.Telegram.Handlers;
@@ -13,6 +15,7 @@ namespace TgDataPlanner.Telegram.Handlers;
 public class CallbackHandler(
     ITelegramBotClient botClient,
     AppDbContext db,
+    SchedulingService schedulingService,
     IConfiguration config,
     ILogger<CommandHandler> logger)
 {
@@ -126,6 +129,51 @@ public class CallbackHandler(
 
             await botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
+        }
+        
+        // Внутри HandleAsync (CallbackHandler)
+        if (callbackQuery.Data!.StartsWith("start_plan_"))
+        {
+            var groupId = int.Parse(callbackQuery.Data.Replace("start_plan_", ""));
+    
+            // Ищем окна от 3 часов (пока хардкод, потом можно сделать ввод)
+            var intersections = await schedulingService.FindIntersections(groupId, 3);
+
+            if (!intersections.Any())
+            {
+                // Убираем лишний символ "_" и "=" перед переменной
+                await botClient.EditMessageText(
+                    chatId: callbackQuery.Message!.Chat.Id,
+                    messageId: callbackQuery.Message.MessageId,
+                    text: "😔 **Пересечений не найдено.** Все игроки заняты в разное время.\n\n*Запустить режим рекомендаций? (В разработке)*",
+                    parseMode: ParseMode.Markdown,
+                    cancellationToken: ct);
+                return;
+            }
+
+            var resultText = "🗓 **Найденные окна (Ваше время):**\n\n";
+            var buttons = new List<InlineKeyboardButton[]>();
+
+            foreach (var interval in intersections.Take(5)) // Показываем первые 5 вариантов
+            {
+                // Переводим в локальное время админа для отображения
+                var admin = await db.Players.FindAsync(new object[] { callbackQuery.From.Id }, ct);
+                var localStart = interval.Start.AddHours(admin?.TimeZoneOffset ?? 0);
+                var localEnd = interval.End.AddHours(admin?.TimeZoneOffset ?? 0);
+
+                var timeStr = $"{localStart:dd.MM HH:mm} - {localEnd:HH:mm}";
+                resultText += $"🔹 {timeStr}\n";
+        
+                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"✅ {timeStr}", $"confirm_time_{groupId}_{interval.Start:yyyyMMddHH}") });
+            }
+
+            await botClient.EditMessageText(
+                callbackQuery.Message!.Chat.Id,
+                callbackQuery.Message.MessageId,
+                resultText,
+                parseMode: ParseMode.Markdown,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: ct);
         }
     }
 }

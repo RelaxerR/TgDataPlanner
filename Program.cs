@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
+using TgDataPlanner.Services.Scheduling;
 using TgDataPlanner.Telegram;
 using TgDataPlanner.Telegram.Handlers;
 
@@ -35,6 +36,7 @@ builder.Services.AddScoped<CallbackHandler>();
 
 // Регистрируем фоновые службы (наследуются от BackgroundService)
 builder.Services.AddHostedService<BotBackgroundService>(); 
+builder.Services.AddScoped<SchedulingService>();
 // TODO: builder.Services.AddHostedService<ReminderService>();
 
 using var host = builder.Build();
