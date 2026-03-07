@@ -13,6 +13,7 @@ public class Player
     public int TimeZoneOffset { get; set; } 
 
     // Навигационные свойства
+    public string? CurrentState { get; set; }
     public List<Group> Groups { get; set; } = new();
     public List<AvailabilitySlot> Slots { get; set; } = new();
 }
