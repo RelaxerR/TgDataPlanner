@@ -3,7 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
-using TgDataPlanner.Services.Scheduling;
+using TgDataPlanner.Data;
+using TgDataPlanner.Services;
 using TgDataPlanner.Telegram;
 using TgDataPlanner.Telegram.Handlers;
 

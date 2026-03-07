@@ -6,8 +6,9 @@ using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using TgDataPlanner.Data;
 using TgDataPlanner.Data.Entities;
-using TgDataPlanner.Services.Scheduling;
+using TgDataPlanner.Services;
 using TgDataPlanner.Telegram.Menus;
 
 namespace TgDataPlanner.Telegram.Handlers;

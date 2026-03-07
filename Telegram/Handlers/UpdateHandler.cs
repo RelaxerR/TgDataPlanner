@@ -4,7 +4,8 @@ using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using TgDataPlanner.Services.Scheduling;
+using TgDataPlanner.Data;
+using TgDataPlanner.Services;
 
 namespace TgDataPlanner.Telegram.Handlers;
 
