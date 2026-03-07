@@ -43,7 +43,7 @@ public partial class Player
     [Required]
     [StringLength(Constraints.UsernameMaxLength, MinimumLength = Constraints.UsernameMinLength)]
     public string Username { get; set; } = "Unknown";
-    public string GetMarkdownUsername() => Username.EscapeMarkdownV2();
+    public string GetMarkdownUsername() => $"@{Username.EscapeMarkdownV2()}";
 
     /// <summary>
     /// Смещение часового пояса игрока относительно UTC в часах.

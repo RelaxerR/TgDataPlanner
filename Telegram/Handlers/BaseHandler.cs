@@ -136,6 +136,53 @@ public abstract class BaseHandler
             parseMode: ParseMode.Markdown,
             cancellationToken: ct);
     }
+    
+    /// <summary>
+    /// Отправляет уведомление каждому в группе
+    /// </summary>
+    /// <param name="group">Группа.</param>
+    /// <param name="text">Текст уведомления.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    protected async Task NotifyAllInGroupAsync(Group group, string text, CancellationToken ct = default)
+    {
+        var users = group.Players.Select(p => p.TelegramId).ToList();
+        foreach (var user in users)
+        {
+            await BotClient.SendMessage(
+                chatId: user,
+                text: $"🔔 {text}",
+                parseMode: ParseMode.Markdown,
+                cancellationToken: ct);
+            
+            Logger.LogDebug("Уведомление для [@{user}]: {TextPreview}", user, Truncate(text, 50));
+        }
+    }
+    
+    
+    /// <summary>
+    /// Отправляет уведомление каждому в группе
+    /// </summary>
+    /// <param name="group">Группа.</param>
+    /// <param name="text">Текст уведомления.</param>
+    /// <param name="replyMarkup">Необязательная новая разметка клавиатуры.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    protected async Task NotifyAllInGroupAsync(Group group, string text, InlineKeyboardMarkup? replyMarkup = null, CancellationToken ct = default)
+    {
+        var users = group.Players.Select(p => p.TelegramId).ToList();
+        foreach (var user in users)
+        {
+            await BotClient.SendMessage(
+                chatId: user,
+                text: $"🔔 {text}",
+                parseMode: ParseMode.Markdown,
+                replyMarkup: replyMarkup,
+                cancellationToken: ct);
+            
+            Logger.LogDebug("Уведомление для [@{user}]: {TextPreview}", user, Truncate(text, 50));
+        }
+    }
 
     /// <summary>
     /// Редактирует текст существующего сообщения (используется для кнопок).

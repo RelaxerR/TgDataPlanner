@@ -14,6 +14,13 @@ public sealed class Group
     /// </summary>
     [Key]
     public int Id { get; init; }
+    
+    // TODO: Refactor
+    public DateTime? CurrentSessionUtc { get; set; }
+    public string? SessionCreatorUsername { get; set; }
+    // Список ID игроков, которые подтвердили участие (простой вариант - JSON или строка)
+    public string ConfirmedPlayerIds { get; set; } = ""; 
+
 
     /// <summary>
     /// Отображаемое название группы (например, "Кампания Драконьего Копья").

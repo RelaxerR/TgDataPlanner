@@ -36,6 +36,8 @@ public class CallbackHandler : BaseHandler
         public const string ConfirmDeleteGroup = "confirm_delete_";
         public const string ConfirmTime = "confirm_time_";
         public const string LeaveGroup = "leave_group_";
+        public const string RsvpYes = "rsvp_yes_";
+        public const string RsvpNo = "rsvp_no_";
     }
 
     /// <summary>
@@ -168,6 +170,18 @@ public class CallbackHandler : BaseHandler
             case var _ when data.StartsWith(CallbackPrefixes.LeaveGroup):
                 await HandleLeaveGroupAsync(callbackQuery, userId, ct);
                 break;
+            
+            case var _ when data.StartsWith(CallbackPrefixes.ConfirmTime):
+                await HandleConfirmTimeAsync(callbackQuery, userId, ct);
+                break;
+
+            case var _ when data.StartsWith(CallbackPrefixes.RsvpYes):
+                await HandleRsvpAsync(callbackQuery, userId, isComing: true, ct);
+                break;
+
+            case var _ when data.StartsWith(CallbackPrefixes.RsvpNo):
+                await HandleRsvpAsync(callbackQuery, userId, isComing: false, ct);
+                break;
 
             default:
                 _logger.LogWarning("Неизвестный callback-запрос: {Data}", data);
@@ -178,6 +192,125 @@ public class CallbackHandler : BaseHandler
 
     #region Обработчики колбэков
 
+    /// <summary>
+    /// Обрабатывает выбор админом конкретного времени для сессии и публикует анонс.
+    /// </summary>
+    private async Task HandleConfirmTimeAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        if (userId != AdminId)
+        {
+            await AnswerCallbackAsync(callbackQuery, "🧙 Только Мастер может назначать игру!", showAlert: true, ct);
+            return;
+        }
+
+        var dataParts = callbackQuery.Data!.Split('_');
+        if (dataParts.Length < 4 || !int.TryParse(dataParts[2], out var groupId))
+        {
+            _logger.LogWarning("Неверный формат данных в callback подтверждения времени: {Data}", callbackQuery.Data);
+            return;
+        }
+
+        var timeRaw = dataParts[3]; // Формат yyyyMMddHH
+        if (!DateTime.TryParseExact(timeRaw, "yyyyMMddHH", null, System.Globalization.DateTimeStyles.None, out var sessionTimeUtc))
+        {
+            _logger.LogError("Ошибка парсинга даты сессии из callback: {TimeRaw}", timeRaw);
+            return;
+        }
+
+        var group = await Db.Groups.Include(g => g.Players).FirstOrDefaultAsync(g => g.Id == groupId, ct);
+        if (group == null)
+        {
+            await AnswerCallbackAsync(callbackQuery, "⚠️ Группа не найдена", showAlert: true, ct);
+            return;
+        }
+
+        // Обновляем данные группы
+        group.CurrentSessionUtc = sessionTimeUtc;
+        group.ConfirmedPlayerIds = string.Empty; 
+        await Db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Мастер {UserId} назначил сессию для группы {GroupName} на {Time} UTC", 
+            userId, group.Name, sessionTimeUtc);
+
+        // Получаем локальное время админа для текста
+        var admin = await Db.Players.FindAsync([userId], ct);
+        var localTime = sessionTimeUtc.AddHours(admin?.TimeZoneOffset ?? 0);
+
+        // Редактируем сообщение у админа
+        await EditTextAsync(callbackQuery, $"✅ Сессия для **{group.Name}** назначена на {localTime:dd.MM HH:mm}", ct: ct);
+
+        // Готовим анонс с кнопками RSVP
+        var rsvpKeyboard = new InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton.WithCallbackData("⚔️ ИДУ", $"{CallbackPrefixes.RsvpYes}{groupId}"),
+                InlineKeyboardButton.WithCallbackData("🚫 НЕ СМОГУ", $"{CallbackPrefixes.RsvpNo}{groupId}")
+            ]
+        ]);
+
+        await NotifyAllInGroupAsync(
+            group,
+            $"⚔️ **ОБЪЯВЛЕН СБОР НА ПАРТИЮ!** ⚔️\n\n" +
+            $"👥 Группа: **{group.Name}**\n" +
+            $"📅 Дата: **{localTime:dd.MM (ddd)}**\n" +
+            $"🕒 Начало: **{localTime:HH:mm}** (по МСК)\n\n" +
+            $"Игроки, подтвердите явку кнопками ниже!", 
+            rsvpKeyboard, ct);
+        
+        await AnswerCallbackAsync(callbackQuery, ct: ct);
+    }
+        
+    /// <summary>
+    /// Обрабатывает ответ игрока (подтверждение или отказ) на анонс сессии.
+    /// </summary>
+    private async Task HandleRsvpAsync(CallbackQuery callbackQuery, long userId, bool isComing, CancellationToken ct)
+    {
+        var prefix = isComing ? CallbackPrefixes.RsvpYes : CallbackPrefixes.RsvpNo;
+        var groupIdString = callbackQuery.Data!.Replace(prefix, string.Empty);
+
+        if (!int.TryParse(groupIdString, out var groupId))
+        {
+            _logger.LogWarning("Неверный ID группы в RSVP callback: {Data}", callbackQuery.Data);
+            return;
+        }
+
+        var group = await Db.Groups.Include(g => g.Players).FirstOrDefaultAsync(g => g.Id == groupId, ct);
+        var player = await Db.Players.FindAsync([userId], ct);
+
+        if (group == null || player == null)
+        {
+            await AnswerCallbackAsync(callbackQuery, "⚠️ Ошибка: данные не найдены", showAlert: true, ct);
+            return;
+        }
+
+        if (isComing)
+        {
+            _logger.LogInformation("Игрок {UserId} подтвердил участие в сессии группы {GroupId}", userId, groupId);
+            
+            await NotifyMainChatAsync(
+                $"✅ Игрок **{player.GetMarkdownUsername()}** сообщил, что сможет прийти на игру группы **{group.Name}**!", 
+                ct: ct);
+            
+            await EditTextAsync(callbackQuery, "Вы подтвердили свое участие в сессии. Если ваши планы поменялись, отредактируйте свободное время командой /free и подтвердите изменения", ct: ct);
+            await EditReplyMarkupAsync(callbackQuery, null, ct: ct);
+            
+            await AnswerCallbackAsync(callbackQuery, "Ваше участие подтверждено! ⚔️", ct: ct);
+            // Тут можно добавить логику сохранения ID подтвердивших
+        }
+        else
+        {
+            _logger.LogInformation("Игрок {UserId} отказался от участия в сессии группы {GroupId}", userId, groupId);
+            
+            await NotifyMainChatAsync(
+                $"⚠️ Игрок **{player.GetMarkdownUsername()}** сообщил, что не сможет прийти на игру группы **{group.Name}**.", 
+                ct: ct);
+            
+            await EditTextAsync(callbackQuery, "Вы отказались от участии в сессии. Если ваши планы поменялись, отредактируйте свободное время командой /free и подтвердите изменения", ct: ct);
+            await EditReplyMarkupAsync(callbackQuery, null, ct: ct);
+
+            await AnswerCallbackAsync(callbackQuery, "Мастер уведомлен об отмене", ct: ct);
+        }
+    }
+    
     /// <summary>
     /// Обрабатывает попытку выполнения админ-действия не-администратором.
     /// </summary>
@@ -436,6 +569,12 @@ public class CallbackHandler : BaseHandler
     /// </summary>
     private async Task HandleJoinGroupAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
     {
+        var user = await UserService.GetPlayerAsync(userId, ct);
+        if (user is null)
+        {
+            Logger.LogError("Не удалось найти игрока с TelegramId {UserId} при попытке вступить в группу", userId);
+            return;
+        }
         var groupId = int.Parse(callbackQuery.Data!.Replace(CallbackPrefixes.JoinGroup, string.Empty));
 
         // Используем UserService для добавления в группу
@@ -457,6 +596,7 @@ public class CallbackHandler : BaseHandler
         {
             _logger.LogInformation("Пользователь {UserId} вступил в группу {GroupId} [{GroupName}]", userId, groupId, addedGroup.Name);
             await EditTextAsync(callbackQuery, $"⚔️ Вы вступили в группу **{addedGroup.Name}**!", ct: ct);
+            await NotifyMainChatAsync($"⚔️ Игрок {user.GetMarkdownUsername()} вступил в группу **{addedGroup.Name}**!", ct: ct);
         }
 
         await AnswerCallbackAsync(callbackQuery, ct: ct);
