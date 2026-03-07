@@ -414,14 +414,14 @@ public class CallbackHandler : BaseHandler
             return;
         }
 
-        var groupNames = player.Groups.Any()
+        var groupNames = player.Groups.Count != 0
             ? string.Join(", ", player.Groups.Select(g => g.Name))
             : "Без группы";
 
         await EditTextAsync(callbackQuery, "✅ Данные сохранены!", ct: ct);
 
         await NotifyMainChatAsync(
-            $"🔔 **{player.Username}** [{groupNames}] завершил заполнение расписания!",
+            $"🔔 **@{player.GetMarkdownUsername()}** [{groupNames}] завершил заполнение расписания!",
             ct);
 
         _logger.LogInformation(

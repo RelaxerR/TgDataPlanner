@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -74,13 +75,13 @@ public abstract class BaseHandler
         UserService = userService ?? throw new ArgumentNullException(nameof(userService));
         SchedulingService = schedulingService ?? throw new ArgumentNullException(nameof(schedulingService));
 
-        if (!long.TryParse(config["MainChatId"], out var mainChatId))
+        if (!long.TryParse(config["TelegramBot:MainChatId"], out var mainChatId))
         {
             Logger.LogError("Не удалось распарсить MainChatId из конфигурации. Значение: {Value}", config["MainChatId"]);
         }
         MainChatId = mainChatId;
 
-        if (!long.TryParse(config["AdminId"], out var adminId))
+        if (!long.TryParse(config["TelegramBot:AdminId"], out var adminId))
         {
             Logger.LogError("Не удалось распарсить AdminId из конфигурации. Значение: {Value}", config["AdminId"]);
         }
@@ -185,11 +186,23 @@ public abstract class BaseHandler
             return;
         }
 
-        await BotClient.EditMessageReplyMarkup(
-            chatId: query.Message.Chat.Id,
-            messageId: query.Message.MessageId,
-            replyMarkup: replyMarkup,
-            cancellationToken: ct);
+        try
+        {
+            await BotClient.EditMessageReplyMarkup(
+                chatId: query.Message.Chat.Id,
+                messageId: query.Message.MessageId,
+                replyMarkup: replyMarkup,
+                cancellationToken: ct);
+        }
+        catch (ApiRequestException ex) 
+        {
+            // Игнорируем ошибку, если сообщение не изменилось
+            if (ex.ErrorCode == 400 && ex.Message.Contains("message is not modified"))
+            {
+                return; // Просто выходим, не пишем в лог ошибку
+            }
+            throw; // Пробрасываем другие ошибки
+        }
     }
 
     /// <summary>
