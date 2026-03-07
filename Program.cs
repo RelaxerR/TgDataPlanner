@@ -1,52 +1,34 @@
-﻿using DefaultNamespace;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Telegram.Bot;
-using TgDataPlanner.Telegram;
-using TgDataPlanner.Telegram.Handlers;
+// using MyDndBot.Data;
+// using MyDndBot.Telegram;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Настройка логирования
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
-builder.Logging.SetMinimumLevel(LogLevel.Information); 
-
 // 1. Регистрация настроек (токен и БД)
-var botToken = builder.Configuration["BotToken"];
-
-if (string.IsNullOrEmpty(botToken))
-{
-    throw new Exception("BotToken не найден в appsettings.json!");
-}
+// В реальности лучше брать из builder.Configuration
+string botToken = "ВАШ_ТОКЕН";
 
 // 2. Подключаем Telegram Bot Client
-builder.Services.AddSingleton<ITelegramBotClient>(provider => 
+builder.Services.AddSingleton(provider =>
     new TelegramBotClient(botToken));
 
 // 3. Подключаем Базу Данных
-builder.Services.AddDbContext<AppDbContext>();
+// builder.Services.AddDbContext();
 
-// 4. Регистрация наших сервисов (указываем классы-обработчики)
-builder.Services.AddScoped<UpdateHandler>(); 
-builder.Services.AddScoped<CommandHandler>();
-builder.Services.AddScoped<CallbackHandler>();
+// 4. Регистрация наших сервисов
+// builder.Services.AddScoped(); // Логика обработки сообщений
+// builder.Services.AddHostedService(); // Сервис, который держит бота запущенным
+// builder.Services.AddHostedService(); // Тот самый сервис для напоминаний раз в 3 часа
 
-// Регистрируем фоновые службы (наследуются от BackgroundService)
-builder.Services.AddHostedService<BotBackgroundService>(); 
-// TODO: builder.Services.AddHostedService<ReminderService>();
+using IHost host = builder.Build();
 
-using var host = builder.Build();
-
-// Автоматическое применение миграций при старте
+// Автоматическое применение миграций при старте (удобно для разработки)
 using (var scope = host.Services.CreateScope())
 {
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    
-    var created = db.Database.EnsureCreated();
-    logger.LogInformation(created ? ">>> База данных успешно создана." : ">>> База данных уже существует.");
+    // var db = scope.ServiceProvider.GetRequiredService();
+    // db.Database.EnsureCreated();
 }
 
 await host.RunAsync();
