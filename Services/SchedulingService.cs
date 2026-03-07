@@ -1,4 +1,3 @@
-using DefaultNamespace;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TgDataPlanner.Data;

@@ -1,4 +1,3 @@
-using DefaultNamespace;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;

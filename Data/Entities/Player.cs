@@ -41,7 +41,7 @@ public partial class Player
     /// </remarks>
     [Required]
     [StringLength(Constraints.UsernameMaxLength, MinimumLength = Constraints.UsernameMinLength)]
-    public string Username { get; init; } = "Unknown";
+    public string Username { get; set; } = "Unknown";
 
     /// <summary>
     /// Смещение часового пояса игрока относительно UTC в часах.
