@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using DefaultNamespace;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Telegram.Bot;
 // using MyDndBot.Data;
@@ -8,27 +9,30 @@ var builder = Host.CreateApplicationBuilder(args);
 
 // 1. Регистрация настроек (токен и БД)
 // В реальности лучше брать из builder.Configuration
-string botToken = "ВАШ_ТОКЕН";
+var botToken = "ВАШ_ТОКЕН";
 
 // 2. Подключаем Telegram Bot Client
-builder.Services.AddSingleton(provider =>
+builder.Services.AddSingleton<ITelegramBotClient>(provider => 
     new TelegramBotClient(botToken));
 
 // 3. Подключаем Базу Данных
-// builder.Services.AddDbContext();
+builder.Services.AddDbContext<AppDbContext>();
 
-// 4. Регистрация наших сервисов
-// builder.Services.AddScoped(); // Логика обработки сообщений
-// builder.Services.AddHostedService(); // Сервис, который держит бота запущенным
-// builder.Services.AddHostedService(); // Тот самый сервис для напоминаний раз в 3 часа
+// 4. Регистрация наших сервисов (указываем классы-обработчики)
+builder.Services.AddScoped<UpdateHandler>(); 
 
-using IHost host = builder.Build();
+// Регистрируем фоновые службы (наследуются от BackgroundService)
+// TODO: builder.Services.AddHostedService<BotBackgroundService>(); 
+// TODO: builder.Services.AddHostedService<ReminderService>();
 
-// Автоматическое применение миграций при старте (удобно для разработки)
+using var host = builder.Build();
+
+// Автоматическое применение миграций при старте
 using (var scope = host.Services.CreateScope())
 {
-    // var db = scope.ServiceProvider.GetRequiredService();
-    // db.Database.EnsureCreated();
+    // Указываем в скобках <AppDbContext>, чтобы компилятор понял, что достать из контейнера
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
 }
 
 await host.RunAsync();
