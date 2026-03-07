@@ -7,17 +7,20 @@ using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 using TgDataPlanner.Data.Entities;
+using TgDataPlanner.Services.Scheduling;
 using TgDataPlanner.Telegram.Menus;
 
 namespace TgDataPlanner.Telegram.Handlers;
 
 public class CommandHandler(
-    ITelegramBotClient botClient,
-    AppDbContext db,
     IConfiguration config,
-    ILogger<CommandHandler> logger)
+    ITelegramBotClient botClient,
+    ILogger<CommandHandler> logger,
+    AppDbContext db,
+    SchedulingService schedulingService) : BaseHandler(config, botClient, logger, db, schedulingService)
 {
-    private readonly long _adminId = long.Parse(config["AdminId"] ?? "0");
+    private readonly ILogger<CommandHandler> _logger = logger;
+    private readonly AppDbContext _db = db;
 
     public async Task HandleAsync(Message message, CancellationToken ct)
     {
@@ -25,12 +28,12 @@ public class CommandHandler(
         var text = message.Text ?? "";
 
         // Находим или создаем игрока в БД, чтобы проверить его стейт
-        var player = await db.Players.FindAsync([userId], ct);
+        var player = await _db.Players.FindAsync([userId], ct);
         if (player == null)
         {
             player = new Player { TelegramId = userId, Username = message.From?.Username ?? "Unknown" };
-            db.Players.Add(player);
-            await db.SaveChangesAsync(ct);
+            _db.Players.Add(player);
+            await _db.SaveChangesAsync(ct);
         }
 
         // 1. Если пользователь в процессе создания группы
@@ -40,13 +43,49 @@ public class CommandHandler(
             return;
         }
 
-        // 2. Обработка команд
-        if (text == "/create_group")
+        if (text == "/start")
         {
-            if (userId != _adminId) return;
+            var isAdmin = userId == AdminId;
+            var welcomeText = isAdmin 
+                ? "🧙 **Приветствую, Великий Мастер!**\nЯ твой верный помощник в планировании сессий." 
+                : "🛡 **Привет, Искатель Приключений!**\nЯ помогу твоей группе собраться на следующую игру.";
+
+            var commands = new System.Text.StringBuilder();
+            commands.AppendLine("\n**Доступные команды:**");
+            commands.AppendLine("📅 /free — Отметить свое свободное время (в личке)");
+            commands.AppendLine("🌍 /timezone — Настроить свой часовой пояс");
+            commands.AppendLine("👥 /join — Вступить в группу (вызывать в чате группы)");
+    
+            if (isAdmin)
+            {
+                commands.AppendLine("\n**Команды Мастера:**");
+                commands.AppendLine("/group — Создать новую группу");
+                commands.AppendLine("/delgroup — Удалить группу");
+                commands.AppendLine("/plan — Найти идеальное время для игры");
+                commands.AppendLine("/remind — Напомнить ленивым игрокам о заполнении");
+            }
+
+            commands.AppendLine("\n**В разработке:**");
+            commands.AppendLine("⏳ _Авто-напоминания за 5ч и 1ч до игры_");
+            commands.AppendLine("🤖 _Умные рекомендации при отсутствии окон_");
+            commands.AppendLine("📊 _Статус заполнения времени группой_");
+
+            await BotClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: welcomeText + commands.ToString(),
+                parseMode: ParseMode.Markdown,
+                cancellationToken: ct
+            );
+            return;
+        }
+        
+        // 2. Обработка команд
+        if (text == "/group")
+        {
+            if (userId != AdminId) return;
 
             player.CurrentState = "AwaitingGroupName";
-            await db.SaveChangesAsync(ct);
+            await _db.SaveChangesAsync(ct);
 
             // Создаем кнопку отмены
             var keyboard = new InlineKeyboardMarkup(new[]
@@ -54,18 +93,67 @@ public class CommandHandler(
                 InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel_action")
             });
 
-            await botClient.SendMessage(
+            await BotClient.SendMessage(
                 chatId: message.Chat.Id, 
                 text: "📝 **Создание новой группы**\n\nВведите название для вашей D&D кампании:",
                 parseMode: ParseMode.Markdown,
                 replyMarkup: keyboard,
                 cancellationToken: ct);
         }
+        if (text == "/delgroup")
+        {
+            if (userId != AdminId) return;
+
+            var groups = await _db.Groups.ToListAsync(ct);
+            var buttons = groups.Select(g => 
+                new[] { InlineKeyboardButton.WithCallbackData($"🗑 {g.Name}", $"confirm_delete_{g.Id}") });
+
+            await BotClient.SendMessage(
+                message.Chat.Id,
+                "⚠️ **Удаление группы**\nВыберите группу, которую хотите расформировать:",
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: ct);
+        }
+
         
         if (text == "/join")
         {
-            await HandleJoinGroup(message, player, ct);
+            var groups = await _db.Groups.ToListAsync(ct);
+            if (!groups.Any())
+            {
+                await BotClient.SendMessage(message.Chat.Id, "❌ Групп пока нет. Мастер должен создать их через /create_group", cancellationToken: ct);
+                return;
+            }
+
+            var buttons = groups.Select(g => 
+                new[] { InlineKeyboardButton.WithCallbackData(g.Name, $"join_group_{g.Id}") });
+
+            await BotClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: "📜 **Выберите группу для вступления:**",
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: ct);
         }
+
+        if (text == "/leave")
+        {
+            if (player == null || !player.Groups.Any())
+            {
+                await BotClient.SendMessage(message.Chat.Id, "🛡 Вы пока не состоите ни в одной группе.", cancellationToken: ct);
+                return;
+            }
+
+            var buttons = player.Groups.Select(g => 
+                new[] { InlineKeyboardButton.WithCallbackData($"🚪 Покинуть {g.Name}", $"leave_group_{g.Id}") });
+
+            await BotClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: "🏃 **Выход из группы**\nВыберите группу, которую хотите покинуть:",
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: ct);
+        }
+
+
         
         if (text == "/timezone")
         {
@@ -76,7 +164,7 @@ public class CommandHandler(
                 new[] { InlineKeyboardButton.WithCallbackData("UTC +5", "set_tz_5"), InlineKeyboardButton.WithCallbackData("UTC +6", "set_tz_6"), InlineKeyboardButton.WithCallbackData("UTC +7", "set_tz_7") }
             });
 
-            await botClient.SendMessage(
+            await BotClient.SendMessage(
                 message.Chat.Id, 
                 "🌍 **Настройка часового пояса**\n\nВыберите ваше смещение относительно UTC (например, для Москвы это +3):",
                 parseMode: ParseMode.Markdown,
@@ -86,30 +174,45 @@ public class CommandHandler(
         
         if (text == "/free")
         {
-            await botClient.SendMessage(
-                message.Chat.Id,
-                "📅 **Выбор доступного времени**\nВыберите дату, чтобы отметить часы, когда вы свободны:",
-                parseMode: ParseMode.Markdown,
-                replyMarkup: AvailabilityMenu.GetDateCalendar(player.TimeZoneOffset),
-                cancellationToken: ct);
+            try 
+            {
+                // Отправляем сообщение напрямую пользователю (по его TelegramId)
+                await BotClient.SendMessage(
+                    chatId: message.From!.Id, 
+                    text: "📅 **Ваш личный календарь**\nВыберите дату, чтобы отметить свободные часы:",
+                    parseMode: ParseMode.Markdown,
+                    replyMarkup: AvailabilityMenu.GetDateCalendar(player.TimeZoneOffset),
+                    cancellationToken: ct);
+
+                // Если команда была в группе, даем подтверждение там
+                if (message.Chat.Type != ChatType.Private)
+                {
+                    await BotClient.SendMessage(message.Chat.Id, $"📩 {message.From.FirstName}, отправил календарь вам в личку!", cancellationToken: ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Если пользователь не заблокировал бота или еще не писал ему
+                await BotClient.SendMessage(message.Chat.Id, $"❌ {message.From?.FirstName}, я не могу написать вам. Пожалуйста, начните со мной диалог в личке (@relaxerr_dnd_helper_bot).", cancellationToken: ct);
+            }
         }
         
         // Внутри HandleAsync
         if (text.StartsWith("/plan"))
         {
-            if (userId != _adminId) return;
+            if (userId != AdminId) return;
 
-            var groups = await db.Groups.ToListAsync(ct);
+            var groups = await _db.Groups.ToListAsync(ct);
             if (groups.Count == 0)
             {
-                await botClient.SendMessage(message.Chat.Id, "❌ Сначала создайте группу через /create_group", cancellationToken: ct);
+                await BotClient.SendMessage(message.Chat.Id, "❌ Сначала создайте группу через /group", cancellationToken: ct);
                 return;
             }
 
             var buttons = groups.Select(g => 
                 new[] { InlineKeyboardButton.WithCallbackData(g.Name, $"start_plan_{g.Id}") });
     
-            await botClient.SendMessage(
+            await BotClient.SendMessage(
                 message.Chat.Id,
                 "🎯 **Запуск планирования**\nВыберите группу, для которой нужно найти время:",
                 replyMarkup: new InlineKeyboardMarkup(buttons),
@@ -122,15 +225,15 @@ public class CommandHandler(
     {
         // 1. Ищем группу, привязанную к этому чату
         var chatId = message.Chat.Id;
-        var group = await db.Groups
+        var group = await _db.Groups
             .Include(g => g.Players) // Загружаем список игроков группы
             .FirstOrDefaultAsync(g => g.TelegramChatId == chatId, ct);
 
         if (group == null)
         {
-            await botClient.SendMessage(
+            await BotClient.SendMessage(
                 chatId,
-                "❌ В этом чате еще не создана D&D группа. Попросите мастера использовать /create_group",
+                "❌ В этом чате еще не создана D&D группа. Попросите мастера использовать /group",
                 parseMode: ParseMode.Markdown,
                 cancellationToken: ct);
             return;
@@ -139,16 +242,16 @@ public class CommandHandler(
         // 2. Проверяем, не в группе ли уже игрок
         if (group.Players.Any(p => p.TelegramId == player.TelegramId))
         {
-            await botClient.SendMessage(chatId, $"🛡 {player.Username}, вы уже состоите в группе '{group.Name}'!", cancellationToken: ct);
+            await BotClient.SendMessage(chatId, $"🛡 {player.Username}, вы уже состоите в группе '{group.Name}'!", cancellationToken: ct);
             return;
         }
 
         // 3. Добавляем игрока
         group.Players.Add(player);
-        await db.SaveChangesAsync(ct);
+        await _db.SaveChangesAsync(ct);
 
-        await botClient.SendMessage(chatId, $"🎲 Ура! {player.Username} присоединился к кампании '{group.Name}'!", cancellationToken: ct);
-        logger.LogInformation("Игрок {User} вступил в группу {Group}", player.Username, group.Name);
+        await BotClient.SendMessage(chatId, $"🎲 Ура! {player.Username} присоединился к кампании '{group.Name}'!", cancellationToken: ct);
+        _logger.LogInformation("Игрок {User} вступил в группу {Group}", player.Username, group.Name);
     }
 
 
@@ -158,7 +261,7 @@ public class CommandHandler(
 
         if (string.IsNullOrWhiteSpace(groupName))
         {
-            await botClient.SendMessage(message.Chat.Id, "Название не может быть пустым. Введите еще раз:", cancellationToken: ct);
+            await BotClient.SendMessage(message.Chat.Id, "Название не может быть пустым. Введите еще раз:", cancellationToken: ct);
             return;
         }
 
@@ -172,10 +275,10 @@ public class CommandHandler(
         // Сбрасываем стейт игрока
         player.CurrentState = null;
     
-        db.Groups.Add(newGroup);
-        await db.SaveChangesAsync(ct);
+        _db.Groups.Add(newGroup);
+        await _db.SaveChangesAsync(ct);
 
-        await botClient.SendMessage(message.Chat.Id, $"✅ Группа **{groupName}** успешно создана!", cancellationToken: ct);
-        logger.LogInformation("Админ {Id} создал группу {Name}", player.TelegramId, groupName);
+        await BotClient.SendMessage(message.Chat.Id, $"✅ Группа **{groupName}** успешно создана!", cancellationToken: ct);
+        _logger.LogInformation("Админ {Id} создал группу {Name}", player.TelegramId, groupName);
     }
 }

@@ -9,16 +9,19 @@ public static class AvailabilityMenu
     public static InlineKeyboardMarkup GetDateCalendar(int timeZoneOffset)
     {
         var buttons = new List<InlineKeyboardButton[]>();
-        var startDate = DateTime.UtcNow.AddHours(timeZoneOffset).AddDays(1); // Начинаем со следующего дня
+        var startDate = DateTime.UtcNow.AddHours(timeZoneOffset).AddDays(1);
 
-        for (int i = 0; i < 14; i++)
+        for (var i = 0; i < 14; i++)
         {
             var date = startDate.AddDays(i);
             var dateStr = date.ToString("dd.MM (ddd)");
             var callbackData = $"pick_date_{date:yyyy-MM-dd}";
-            
-            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData(dateStr, callbackData) });
+        
+            buttons.Add([InlineKeyboardButton.WithCallbackData(dateStr, callbackData)]);
         }
+
+        // Добавляем финальную кнопку отдельным рядом
+        buttons.Add([InlineKeyboardButton.WithCallbackData("✅ ЗАВЕРШИТЬ ЗАПОЛНЕНИЕ", "finish_voting")]);
 
         return new InlineKeyboardMarkup(buttons);
     }

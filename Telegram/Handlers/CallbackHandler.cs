@@ -13,38 +13,56 @@ using TgDataPlanner.Telegram.Menus;
 namespace TgDataPlanner.Telegram.Handlers;
 
 public class CallbackHandler(
-    ITelegramBotClient botClient,
-    AppDbContext db,
-    SchedulingService schedulingService,
     IConfiguration config,
-    ILogger<CommandHandler> logger)
+    ITelegramBotClient botClient,
+    ILogger<CommandHandler> logger,
+    AppDbContext db,
+    SchedulingService schedulingService) : BaseHandler(config, botClient, logger, db, schedulingService)
 {
+    private readonly IConfiguration _config = config;
+    private readonly ILogger<CommandHandler> _logger = logger;
+    private readonly AppDbContext _db = db;
+    private readonly SchedulingService _schedulingService = schedulingService;
+    
     public async Task HandleAsync(CallbackQuery callbackQuery, CancellationToken ct)
     {
-        logger.LogInformation("Нажата кнопка: {Data}", callbackQuery.Data);
+        var userId = callbackQuery.From.Id;
+    
+        if (!long.TryParse(_config["AdminId"], out var _adminId))
+        {
+            _logger.LogError("Не удалось получить AdminId из конфигурации");
+        }
+    
+        // Пример защиты для критичных действий:
+        if (callbackQuery.Data.StartsWith("confirm_time_") && userId != _adminId)
+        {
+            await BotClient.AnswerCallbackQuery(callbackQuery.Id, "Только админ может подтвердить время!", showAlert: true, cancellationToken: ct);
+            return;
+        }
+        
+        _logger.LogInformation("Нажата кнопка: {Data}", callbackQuery.Data);
         // Тут будет логика кликов по часам и датам
         await Task.CompletedTask;
         
         if (callbackQuery.Data == "cancel_action")
         {
-            var userId = callbackQuery.From.Id;
-            var player = await db.Players.FindAsync([userId], ct);
+            var player = await _db.Players.FindAsync([userId], ct);
 
             if (player != null)
             {
                 player.CurrentState = null; // Сбрасываем стейт
-                await db.SaveChangesAsync(ct);
+                await _db.SaveChangesAsync(ct);
             }
 
             // Убираем кнопки из сообщения и пишем, что отменено
-            await botClient.EditMessageText(
+            await BotClient.EditMessageText(
                 chatId: callbackQuery.Message!.Chat.Id,
                 messageId: callbackQuery.Message.MessageId,
                 text: "🚫 Действие отменено.",
                 cancellationToken: ct);
             
             // Важно: всегда отвечаем на CallbackQuery, чтобы убрать "часики" в ТГ
-            await botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            await BotClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
         }
         
         if (callbackQuery?.Data != null && callbackQuery.Data.StartsWith("set_tz_"))
@@ -52,15 +70,14 @@ public class CallbackHandler(
             var offsetString = callbackQuery.Data.Replace("set_tz_", "");
             if (int.TryParse(offsetString, out var offset))
             {
-                var userId = callbackQuery.From.Id;
-                var player = await db.Players.FindAsync([userId], ct);
+                var player = await _db.Players.FindAsync([userId], ct);
 
                 if (player != null)
                 {
                     player.TimeZoneOffset = offset;
-                    await db.SaveChangesAsync(ct);
+                    await _db.SaveChangesAsync(ct);
             
-                    await botClient.EditMessageText(
+                    await BotClient.EditMessageText(
                         callbackQuery.Message!.Chat.Id,
                         callbackQuery.Message.MessageId,
                         $"✅ Ваш часовой пояс установлен: **UTC {(offset >= 0 ? "+" : "")}{offset}**",
@@ -68,7 +85,7 @@ public class CallbackHandler(
                         cancellationToken: ct);
                 }
             }
-            await botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            await BotClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
         }
         
         // Внутри HandleAsync
@@ -78,9 +95,9 @@ public class CallbackHandler(
         {
             var dateStr = callbackQuery.Data.Replace("pick_date_", "");
             var date = DateTime.Parse(dateStr);
-            var player = await db.Players.Include(p => p.Slots).FirstOrDefaultAsync(p => p.TelegramId == callbackQuery.From.Id, cancellationToken: ct);
+            var player = await _db.Players.Include(p => p.Slots).FirstOrDefaultAsync(p => p.TelegramId == callbackQuery.From.Id, cancellationToken: ct);
     
-            await botClient.EditMessageText(
+            await BotClient.EditMessageText(
                 callbackQuery.Message!.Chat.Id,
                 callbackQuery.Message.MessageId,
                 $"🕒 Выберите время для **{date:dd.MM}**:",
@@ -95,18 +112,18 @@ public class CallbackHandler(
             var date = DateTime.Parse(parts[2]);
             var hour = int.Parse(parts[3]);
 
-            var player = await db.Players.Include(p => p.Slots).FirstOrDefaultAsync(p => p.TelegramId == callbackQuery.From.Id, cancellationToken: ct);
+            var player = await _db.Players.Include(p => p.Slots).FirstOrDefaultAsync(p => p.TelegramId == callbackQuery.From.Id, cancellationToken: ct);
             var slotTimeUtc = new DateTime(date.Year, date.Month, date.Day, hour % 24, 0, 0).AddHours(-player!.TimeZoneOffset);
 
             var existingSlot = player.Slots.FirstOrDefault(s => s.DateTimeUtc == slotTimeUtc);
 
-            if (existingSlot != null) db.Slots.Remove(existingSlot);
-            else db.Slots.Add(new AvailabilitySlot { PlayerId = player.TelegramId, DateTimeUtc = slotTimeUtc });
+            if (existingSlot != null) _db.Slots.Remove(existingSlot);
+            else _db.Slots.Add(new AvailabilitySlot { PlayerId = player.TelegramId, DateTimeUtc = slotTimeUtc });
 
-            await db.SaveChangesAsync(ct);
+            await _db.SaveChangesAsync(ct);
 
             // Обновляем только кнопки, текст не трогаем
-            await botClient.EditMessageReplyMarkup(
+            await BotClient.EditMessageReplyMarkup(
                 callbackQuery.Message!.Chat.Id,
                 callbackQuery.Message.MessageId,
                 replyMarkup: AvailabilityMenu.GetTimeGrid(date, player.Slots, player.TimeZoneOffset),
@@ -116,10 +133,9 @@ public class CallbackHandler(
         // Обработка кнопки "Назад к датам"
         if (callbackQuery.Data == "back_to_dates")
         {
-            var userId = callbackQuery.From.Id;
-            var player = await db.Players.FindAsync(new object[] { userId }, ct);
+            var player = await _db.Players.FindAsync(new object[] { userId }, ct);
     
-            await botClient.EditMessageText(
+            await BotClient.EditMessageText(
                 chatId: callbackQuery.Message!.Chat.Id,
                 messageId: callbackQuery.Message.MessageId,
                 text: "📅 **Выбор доступного времени**\nВыберите дату, чтобы отметить часы, когда вы свободны:",
@@ -127,7 +143,7 @@ public class CallbackHandler(
                 replyMarkup: AvailabilityMenu.GetDateCalendar(player?.TimeZoneOffset ?? 0),
                 cancellationToken: ct);
 
-            await botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            await BotClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
         
@@ -137,12 +153,12 @@ public class CallbackHandler(
             var groupId = int.Parse(callbackQuery.Data.Replace("start_plan_", ""));
     
             // Ищем окна от 3 часов (пока хардкод, потом можно сделать ввод)
-            var intersections = await schedulingService.FindIntersections(groupId, 3);
+            var intersections = await _schedulingService.FindIntersections(groupId, 3);
 
             if (!intersections.Any())
             {
                 // Убираем лишний символ "_" и "=" перед переменной
-                await botClient.EditMessageText(
+                await BotClient.EditMessageText(
                     chatId: callbackQuery.Message!.Chat.Id,
                     messageId: callbackQuery.Message.MessageId,
                     text: "😔 **Пересечений не найдено.** Все игроки заняты в разное время.\n\n*Запустить режим рекомендаций? (В разработке)*",
@@ -157,7 +173,7 @@ public class CallbackHandler(
             foreach (var interval in intersections.Take(5)) // Показываем первые 5 вариантов
             {
                 // Переводим в локальное время админа для отображения
-                var admin = await db.Players.FindAsync(new object[] { callbackQuery.From.Id }, ct);
+                var admin = await _db.Players.FindAsync(new object[] { callbackQuery.From.Id }, ct);
                 var localStart = interval.Start.AddHours(admin?.TimeZoneOffset ?? 0);
                 var localEnd = interval.End.AddHours(admin?.TimeZoneOffset ?? 0);
 
@@ -167,7 +183,7 @@ public class CallbackHandler(
                 buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"✅ {timeStr}", $"confirm_time_{groupId}_{interval.Start:yyyyMMddHH}") });
             }
 
-            await botClient.EditMessageText(
+            await BotClient.EditMessageText(
                 callbackQuery.Message!.Chat.Id,
                 callbackQuery.Message.MessageId,
                 resultText,
@@ -175,5 +191,58 @@ public class CallbackHandler(
                 replyMarkup: new InlineKeyboardMarkup(buttons),
                 cancellationToken: ct);
         }
+        if (callbackQuery.Data == "finish_voting")
+        {
+            var player = await _db.Players
+                .Include(p => p.Groups)
+                .FirstOrDefaultAsync(p => p.TelegramId == userId, ct);
+
+            if (player == null) return;
+
+            var groupNames = player.Groups.Any() 
+                ? string.Join(", ", player.Groups.Select(g => g.Name)) 
+                : "Без группы";
+
+            // Уведомляем игрока в ЛС
+            await BotClient.EditMessageText(callbackQuery.Message!.Chat.Id, callbackQuery.Message.MessageId, "✅ Данные сохранены!");
+
+            // Уведомление в ОБЩИЙ ЧАТ
+            // await botClient.SendMessage(
+            //     chatId: _mainChatId,
+            //     text: $"🔔 **{player.Username}** [{groupNames}] завершил заполнение расписания!",
+            //     cancellationToken: ct);
+
+            await BotClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+        }
+        
+        // Вступление
+        if (callbackQuery.Data!.StartsWith("join_group_"))
+        {
+            var groupId = int.Parse(callbackQuery.Data.Replace("join_group_", ""));
+            var player = await _db.Players.Include(p => p.Groups).FirstOrDefaultAsync(p => p.TelegramId == userId, ct);
+            var group = await _db.Groups.FindAsync(new object[] { groupId }, ct);
+
+            if (group != null && !player!.Groups.Any(g => g.Id == groupId))
+            {
+                player.Groups.Add(group);
+                await _db.SaveChangesAsync(ct);
+                await BotClient.EditMessageText(callbackQuery.Message!.Chat.Id, callbackQuery.Message.MessageId, $"⚔️ Вы вступили в группу **{group.Name}**!");
+            }
+        }
+
+        // Удаление группы (админом)
+        if (callbackQuery.Data!.StartsWith("confirm_delete_"))
+        {
+            var groupId = int.Parse(callbackQuery.Data.Replace("confirm_delete_", ""));
+            var group = await _db.Groups.FindAsync(new object[] { groupId }, ct);
+            if (group != null)
+            {
+                _db.Groups.Remove(group);
+                await _db.SaveChangesAsync(ct);
+                await BotClient.EditMessageText(callbackQuery.Message!.Chat.Id, callbackQuery.Message.MessageId, $"🗑 Группа **{group.Name}** удалена.");
+            }
+        }
+
+
     }
 }
