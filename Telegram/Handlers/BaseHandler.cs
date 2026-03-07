@@ -5,13 +5,14 @@ using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 using TgDataPlanner.Data;
+using TgDataPlanner.Data.Entities;
 using TgDataPlanner.Services;
 
 namespace TgDataPlanner.Telegram.Handlers;
 
 /// <summary>
 /// Базовый класс для обработчиков Telegram-событий.
-/// Предоставляет общие методы для отправки сообщений и работы с конфигурацией.
+/// Предоставляет общие методы для отправки сообщений, работы с конфигурацией и управления пользователями.
 /// </summary>
 public abstract class BaseHandler
 {
@@ -36,9 +37,14 @@ public abstract class BaseHandler
     protected readonly ILogger<BaseHandler> Logger;
 
     /// <summary>
-    /// Контекст базы данных для работы с сущностями.
+    /// Ссылка на контекст базы данных для доступа к сущностям и сохранения изменений.
     /// </summary>
     protected readonly AppDbContext Db;
+
+    /// <summary>
+    /// Сервис управления пользователями для операций с игроками.
+    /// </summary>
+    protected readonly UserService UserService;
 
     /// <summary>
     /// Сервис планирования для поиска свободных временных окон.
@@ -51,18 +57,21 @@ public abstract class BaseHandler
     /// <param name="config">Конфигурация приложения.</param>
     /// <param name="botClient">Клиент Telegram Bot API.</param>
     /// <param name="logger">Логгер для записи событий.</param>
-    /// <param name="db">Контекст базы данных.</param>
+    /// <param name="db">Контекст базы данных</param>
+    /// <param name="userService">Сервис управления пользователями.</param>
     /// <param name="schedulingService">Сервис планирования.</param>
     protected BaseHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
         ILogger<BaseHandler> logger,
         AppDbContext db,
+        UserService userService,
         SchedulingService schedulingService)
     {
         BotClient = botClient ?? throw new ArgumentNullException(nameof(botClient));
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Db = db ?? throw new ArgumentNullException(nameof(db));
+        UserService = userService ?? throw new ArgumentNullException(nameof(userService));
         SchedulingService = schedulingService ?? throw new ArgumentNullException(nameof(schedulingService));
 
         if (!long.TryParse(config["MainChatId"], out var mainChatId))
@@ -77,6 +86,8 @@ public abstract class BaseHandler
         }
         AdminId = adminId;
     }
+
+    #region Методы отправки сообщений
 
     /// <summary>
     /// Отправляет текстовое сообщение в указанный чат.
@@ -157,6 +168,31 @@ public abstract class BaseHandler
     }
 
     /// <summary>
+    /// Редактирует только клавиатуру сообщения (без изменения текста).
+    /// </summary>
+    /// <param name="query">Запрос обратного вызова, содержащий сообщение.</param>
+    /// <param name="replyMarkup">Новая разметка клавиатуры.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    protected async Task EditReplyMarkupAsync(
+        CallbackQuery query,
+        InlineKeyboardMarkup? replyMarkup,
+        CancellationToken ct = default)
+    {
+        if (query.Message is null)
+        {
+            Logger.LogWarning("Попытка редактировать клавиатуру, но CallbackQuery.Message равен null");
+            return;
+        }
+
+        await BotClient.EditMessageReplyMarkup(
+            chatId: query.Message.Chat.Id,
+            messageId: query.Message.MessageId,
+            replyMarkup: replyMarkup,
+            cancellationToken: ct);
+    }
+
+    /// <summary>
     /// Отвечает на CallbackQuery, убирая индикатор загрузки в Telegram.
     /// </summary>
     /// <param name="callbackQuery">Запрос обратного вызова.</param>
@@ -177,12 +213,106 @@ public abstract class BaseHandler
             cancellationToken: ct);
     }
 
+    #endregion
+
+    #region Методы работы с пользователями (делегируют UserService)
+
+    /// <summary>
+    /// Получает игрока по идентификатору Telegram или создаёт нового, если не найден.
+    /// </summary>
+    /// <param name="telegramId">Идентификатор пользователя Telegram.</param>
+    /// <param name="username">Имя пользователя (опционально).</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Объект игрока (существующий или ново созданный).</returns>
+    protected Task<Player> GetOrCreatePlayerAsync(
+        long telegramId,
+        string? username = null,
+        CancellationToken ct = default) =>
+        UserService.GetOrCreatePlayerAsync(telegramId, username, ct);
+
+    /// <summary>
+    /// Получает игрока с загруженными связанными данными (группы, слоты).
+    /// </summary>
+    /// <param name="telegramId">Идентификатор пользователя Telegram.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Объект игрока с загруженными коллекциями или null.</returns>
+    protected Task<Player?> GetPlayerWithRelationsAsync(
+        long telegramId,
+        CancellationToken ct = default) =>
+        UserService.GetPlayerWithRelationsAsync(telegramId, ct);
+
+    /// <summary>
+    /// Обновляет часовой пояс игрока.
+    /// </summary>
+    /// <param name="telegramId">Идентификатор пользователя Telegram.</param>
+    /// <param name="timeZoneOffset">Новое смещение часового пояса (UTC).</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>True, если обновление прошло успешно.</returns>
+    protected Task<bool> UpdatePlayerTimeZoneAsync(
+        long telegramId,
+        int timeZoneOffset,
+        CancellationToken ct = default) =>
+        UserService.UpdateTimeZoneAsync(telegramId, timeZoneOffset, ct);
+
+    /// <summary>
+    /// Устанавливает или сбрасывает состояние машины состояний игрока.
+    /// </summary>
+    /// <param name="telegramId">Идентификатор пользователя Telegram.</param>
+    /// <param name="state">Новое состояние (null для сброса).</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>True, если состояние обновлено успешно.</returns>
+    protected Task<bool> SetPlayerStateAsync(
+        long telegramId,
+        string? state,
+        CancellationToken ct = default) =>
+        UserService.SetPlayerStateAsync(telegramId, state, ct);
+
+    /// <summary>
+    /// Добавляет игрока в группу.
+    /// </summary>
+    /// <param name="telegramId">Идентификатор пользователя Telegram.</param>
+    /// <param name="groupId">Идентификатор группы.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>True, если игрок успешно добавлен; false, если уже состоит в группе.</returns>
+    protected Task<bool> AddPlayerToGroupAsync(
+        long telegramId,
+        int groupId,
+        CancellationToken ct = default) =>
+        UserService.AddPlayerToGroupAsync(telegramId, groupId, ct);
+
+    /// <summary>
+    /// Удаляет игрока из группы.
+    /// </summary>
+    /// <param name="telegramId">Идентификатор пользователя Telegram.</param>
+    /// <param name="groupId">Идентификатор группы.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>True, если игрок успешно удалён из группы.</returns>
+    protected Task<bool> RemovePlayerFromGroupAsync(
+        long telegramId,
+        int groupId,
+        CancellationToken ct = default) =>
+        UserService.RemovePlayerFromGroupAsync(telegramId, groupId, ct);
+
+    /// <summary>
+    /// Обновляет время последней активности игрока.
+    /// </summary>
+    /// <param name="telegramId">Идентификатор пользователя Telegram.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    protected Task TouchPlayerActivityAsync(
+        long telegramId,
+        CancellationToken ct = default) =>
+        UserService.TouchPlayerActivityAsync(telegramId, ct);
+
     /// <summary>
     /// Проверяет, является ли пользователь администратором.
     /// </summary>
     /// <param name="userId">Идентификатор пользователя Telegram.</param>
     /// <returns>True, если пользователь является администратором.</returns>
     protected bool IsAdmin(long userId) => userId == AdminId && AdminId != 0;
+
+    #endregion
+
+    #region Вспомогательные методы
 
     /// <summary>
     /// Обрезает строку до указанной длины для безопасного логирования.
@@ -197,4 +327,32 @@ public abstract class BaseHandler
 
         return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }
+
+    /// <summary>
+    /// Форматирует смещение часового пояса для отображения (например, +3, -5).
+    /// </summary>
+    /// <param name="offset">Смещение в часах.</param>
+    /// <returns>Строка формата "+H" или "-H".</returns>
+    protected static string FormatTimeZoneOffset(int offset) =>
+        $"{(offset >= 0 ? "+" : "")}{offset}";
+
+    /// <summary>
+    /// Конвертирует время из UTC в локальное время пользователя.
+    /// </summary>
+    /// <param name="utcDateTime">Время в UTC.</param>
+    /// <param name="timeZoneOffset">Смещение часового пояса пользователя.</param>
+    /// <returns>Локальное время пользователя.</returns>
+    protected static DateTime ConvertUtcToLocal(DateTime utcDateTime, int timeZoneOffset) =>
+        utcDateTime.AddHours(timeZoneOffset);
+
+    /// <summary>
+    /// Конвертирует локальное время пользователя в UTC.
+    /// </summary>
+    /// <param name="localDateTime">Локальное время пользователя.</param>
+    /// <param name="timeZoneOffset">Смещение часового пояса пользователя.</param>
+    /// <returns>Время в UTC.</returns>
+    protected static DateTime ConvertLocalToUtc(DateTime localDateTime, int timeZoneOffset) =>
+        localDateTime.AddHours(-timeZoneOffset);
+
+    #endregion
 }

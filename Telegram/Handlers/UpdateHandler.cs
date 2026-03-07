@@ -19,17 +19,38 @@ public class UpdateHandler : BaseHandler
     private readonly ILogger<UpdateHandler> _logger;
 
     /// <summary>
+    /// Типы обновлений, которые поддерживаются обработчиком.
+    /// </summary>
+    private static class SupportedUpdateTypes
+    {
+        public static readonly HashSet<UpdateType> Values =
+        [
+            UpdateType.Message,
+            UpdateType.CallbackQuery
+        ];
+    }
+
+    /// <summary>
     /// Инициализирует новый экземпляр <see cref="UpdateHandler"/>.
     /// </summary>
+    /// <param name="config">Конфигурация приложения.</param>
+    /// <param name="botClient">Клиент Telegram Bot API.</param>
+    /// <param name="logger">Логгер для записи событий.</param>
+    /// <param name="db">Контекст базы данных</param>
+    /// <param name="userService">Сервис управления пользователями.</param>
+    /// <param name="schedulingService">Сервис планирования.</param>
+    /// <param name="commandHandler">Обработчик текстовых команд.</param>
+    /// <param name="callbackHandler">Обработчик нажатий на кнопки.</param>
     public UpdateHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
         ILogger<UpdateHandler> logger,
         AppDbContext db,
+        UserService userService,
         SchedulingService schedulingService,
         CommandHandler commandHandler,
         CallbackHandler callbackHandler)
-        : base(config, botClient, logger, db, schedulingService)
+        : base(config, botClient, logger, db, userService, schedulingService)
     {
         _commandHandler = commandHandler ?? throw new ArgumentNullException(nameof(commandHandler));
         _callbackHandler = callbackHandler ?? throw new ArgumentNullException(nameof(callbackHandler));
@@ -50,12 +71,64 @@ public class UpdateHandler : BaseHandler
             return;
         }
 
+        var context = ExtractUpdateContext(update);
+        LogUpdateReceived(update.Type, context);
+
+        if (!SupportedUpdateTypes.Values.Contains(update.Type))
+        {
+            LogUpdateSkipped(update.Type);
+            return;
+        }
+
+        try
+        {
+            await RouteUpdateAsync(update, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Необработанное исключение при обработке обновления типа {UpdateType}",
+                update.Type);
+        }
+    }
+
+    /// <summary>
+    /// Извлекает контекст обновления (ChatId, UserId) для логирования.
+    /// </summary>
+    /// <param name="update">Объект обновления.</param>
+    /// <returns>Кортеж с идентификаторами чата и пользователя.</returns>
+    private static (long?, long?) ExtractUpdateContext(Update update) =>
+        update.Type switch
+        {
+            UpdateType.Message when update.Message is not null =>
+                (update.Message.Chat.Id, update.Message.From?.Id),
+
+            UpdateType.CallbackQuery when update.CallbackQuery is not null =>
+                (update.CallbackQuery.Message?.Chat.Id, update.CallbackQuery.From?.Id),
+
+            _ => (null, null)!
+        };
+
+    /// <summary>
+    /// Логирует факт получения обновления.
+    /// </summary>
+    private void LogUpdateReceived(UpdateType type, (long? ChatId, long? UserId) context) =>
         _logger.LogDebug(
             "Получено обновление типа {UpdateType}, ChatId: {ChatId}, UserId: {UserId}",
-            update.Type,
-            update.Message?.Chat.Id ?? update.CallbackQuery?.Message?.Chat.Id,
-            update.Message?.From?.Id ?? update.CallbackQuery?.From?.Id);
+            type, context.ChatId, context.UserId);
 
+    /// <summary>
+    /// Логирует пропуск неподдерживаемого типа обновления.
+    /// </summary>
+    private void LogUpdateSkipped(UpdateType type) =>
+        _logger.LogDebug("Пропущено обновление типа {Type}: не поддерживается", type);
+
+    /// <summary>
+    /// Маршрутизирует обновление к соответствующему обработчику.
+    /// </summary>
+    private async Task RouteUpdateAsync(Update update, CancellationToken ct)
+    {
         switch (update.Type)
         {
             case UpdateType.Message when update.Message?.Text is not null:
@@ -65,7 +138,6 @@ public class UpdateHandler : BaseHandler
             case UpdateType.CallbackQuery when update.CallbackQuery is not null:
                 await HandleCallbackQueryAsync(update.CallbackQuery, ct);
                 break;
-
             case UpdateType.Unknown:
             case UpdateType.InlineQuery:
             case UpdateType.ChosenInlineResult:
@@ -88,9 +160,9 @@ public class UpdateHandler : BaseHandler
             case UpdateType.EditedBusinessMessage:
             case UpdateType.DeletedBusinessMessages:
             case UpdateType.PurchasedPaidMedia:
-            default:
-                _logger.LogDebug("Пропущено обновление типа {Type}: не поддерживается", update.Type);
                 break;
+            default:
+                throw new ArgumentOutOfRangeException();
         }
     }
 
@@ -124,7 +196,11 @@ public class UpdateHandler : BaseHandler
     /// <summary>
     /// Обрезает текст для безопасного логирования.
     /// </summary>
-    private static string TruncateForLog(string? text) =>
-        string.IsNullOrEmpty(text) ? string.Empty :
-        text.Length > 100 ? text[..100] + "..." : text;
+    /// <param name="text">Исходный текст.</param>
+    /// <param name="maxLength">Максимальная длина результата.</param>
+    /// <returns>Обрезанная строка.</returns>
+    private static string TruncateForLog(string? text, int maxLength = 100) =>
+        string.IsNullOrEmpty(text)
+            ? string.Empty
+            : text.Length <= maxLength ? text : text[..maxLength] + "...";
 }

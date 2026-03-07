@@ -14,6 +14,7 @@ namespace TgDataPlanner.Telegram.Handlers;
 
 /// <summary>
 /// Обработчик нажатий на inline-кнопки (CallbackQuery).
+/// Маршрутизирует колбэки к соответствующим методам и управляет взаимодействием с пользователем.
 /// </summary>
 public class CallbackHandler : BaseHandler
 {
@@ -38,15 +39,32 @@ public class CallbackHandler : BaseHandler
     }
 
     /// <summary>
+    /// Минимальная длительность окна планирования в часах.
+    /// </summary>
+    private const int MinPlanningDurationHours = 3;
+
+    /// <summary>
+    /// Максимальное количество вариантов окон для отображения пользователю.
+    /// </summary>
+    private const int MaxPlanningResultsToShow = 5;
+
+    /// <summary>
     /// Инициализирует новый экземпляр <see cref="CallbackHandler"/>.
     /// </summary>
+    /// <param name="config">Конфигурация приложения.</param>
+    /// <param name="botClient">Клиент Telegram Bot API.</param>
+    /// <param name="logger">Логгер для записи событий.</param>
+    /// <param name="db">Контекст базы данных</param>
+    /// <param name="userService">Сервис управления пользователями.</param>
+    /// <param name="schedulingService">Сервис планирования.</param>
     public CallbackHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
         ILogger<CallbackHandler> logger,
         AppDbContext db,
+        UserService userService,
         SchedulingService schedulingService)
-        : base(config, botClient, logger, db, schedulingService)
+        : base(config, botClient, logger, db, userService, schedulingService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -73,11 +91,16 @@ public class CallbackHandler : BaseHandler
         {
             await RouteCallbackAsync(callbackQuery, userId, ct);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Ожидаемое поведение при остановке бота
+            _logger.LogDebug("Обработка callback прервана из-за отмены операции");
+        }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
-                "Ошибка при обработке callback '{Data}' от пользователя {UserId}",
+                "Необработанное исключение при обработке callback '{Data}' от пользователя {UserId}",
                 callbackQuery.Data,
                 userId);
 
@@ -97,6 +120,7 @@ public class CallbackHandler : BaseHandler
             return;
         }
 
+        // Проверка прав администратора для критичных действий
         if (data.StartsWith(CallbackPrefixes.ConfirmTime) && !IsAdmin(userId))
         {
             await HandleAdminOnlyActionAsync(callbackQuery, ct);
@@ -141,12 +165,18 @@ public class CallbackHandler : BaseHandler
                 await HandleConfirmDeleteGroupAsync(callbackQuery, userId, ct);
                 break;
 
+            case var _ when data.StartsWith(CallbackPrefixes.LeaveGroup):
+                await HandleLeaveGroupAsync(callbackQuery, userId, ct);
+                break;
+
             default:
                 _logger.LogWarning("Неизвестный callback-запрос: {Data}", data);
                 await AnswerCallbackAsync(callbackQuery, ct: ct);
                 break;
         }
     }
+
+    #region Обработчики колбэков
 
     /// <summary>
     /// Обрабатывает попытку выполнения админ-действия не-администратором.
@@ -166,13 +196,8 @@ public class CallbackHandler : BaseHandler
     /// </summary>
     private async Task HandleCancelActionAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
     {
-        var player = await GetPlayerAsync(userId, ct);
-        if (player is not null)
-        {
-            player.CurrentState = null;
-            await Db.SaveChangesAsync(ct);
-            _logger.LogInformation("Сброшено состояние пользователя {UserId}", userId);
-        }
+        // Сбрасываем состояние через UserService
+        await SetPlayerStateAsync(userId, null, ct);
 
         await EditTextAsync(
             callbackQuery,
@@ -197,15 +222,13 @@ public class CallbackHandler : BaseHandler
             return;
         }
 
-        var player = await GetPlayerAsync(userId, ct);
-        if (player is null)
+        // Обновляем часовой пояс через UserService
+        var success = await UpdatePlayerTimeZoneAsync(userId, offset, ct);
+        if (!success)
         {
-            await AnswerCallbackAsync(callbackQuery, "⚠️ Пользователь не найден", showAlert: true, ct);
+            await AnswerCallbackAsync(callbackQuery, "⚠️ Ошибка при обновлении настроек", showAlert: true, ct);
             return;
         }
-
-        player.TimeZoneOffset = offset;
-        await Db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
             "Пользователь {UserId} установил часовой пояс: UTC{Offset:+#;-#;0}",
@@ -233,6 +256,7 @@ public class CallbackHandler : BaseHandler
             return;
         }
 
+        // Получаем игрока со слотами через UserService
         var player = await GetPlayerWithSlotsAsync(userId, ct);
         if (player is null)
         {
@@ -272,8 +296,9 @@ public class CallbackHandler : BaseHandler
             return;
         }
 
-        var slotTimeUtc = new DateTime(date.Year, date.Month, date.Day, hour % 24, 0, 0)
-            .AddHours(-player.TimeZoneOffset);
+        var slotTimeUtc = ConvertLocalToUtc(
+            new DateTime(date.Year, date.Month, date.Day, hour % 24, 0, 0),
+            player.TimeZoneOffset);
 
         var existingSlot = player.Slots.FirstOrDefault(s => s.DateTimeUtc == slotTimeUtc);
 
@@ -294,11 +319,10 @@ public class CallbackHandler : BaseHandler
 
         await Db.SaveChangesAsync(ct);
 
-        await BotClient.EditMessageReplyMarkup(
-            chatId: callbackQuery.Message!.Chat.Id,
-            messageId: callbackQuery.Message.MessageId,
-            replyMarkup: AvailabilityMenu.GetTimeGrid(date, player.Slots, player.TimeZoneOffset),
-            cancellationToken: ct);
+        await EditReplyMarkupAsync(
+            callbackQuery,
+            AvailabilityMenu.GetTimeGrid(date, player.Slots, player.TimeZoneOffset),
+            ct: ct);
 
         await AnswerCallbackAsync(callbackQuery, ct: ct);
     }
@@ -308,7 +332,7 @@ public class CallbackHandler : BaseHandler
     /// </summary>
     private async Task HandleBackToDatesAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
     {
-        var player = await GetPlayerAsync(userId, ct);
+        var player = await UserService.GetPlayerAsync(userId, ct);
         var tzOffset = player?.TimeZoneOffset ?? 0;
 
         await EditTextAsync(
@@ -332,11 +356,12 @@ public class CallbackHandler : BaseHandler
         }
 
         var groupId = int.Parse(callbackQuery.Data!.Replace(CallbackPrefixes.StartPlan, string.Empty));
-        const int minDurationHours = 3; // TODO: вынести в конфигурацию или добавить параметр
 
-        _logger.LogInformation("Запуск поиска окон для группы {GroupId}, мин. длительность: {Hours}ч", groupId, minDurationHours);
+        _logger.LogInformation(
+            "Запуск поиска окон для группы {GroupId}, мин. длительность: {Hours}ч",
+            groupId, MinPlanningDurationHours);
 
-        var intersections = await SchedulingService.FindIntersectionsAsync(groupId, minDurationHours);
+        var intersections = await SchedulingService.FindIntersectionsAsync(groupId, MinPlanningDurationHours);
 
         if (intersections.Count == 0)
         {
@@ -350,16 +375,20 @@ public class CallbackHandler : BaseHandler
         var resultText = "🗓 **Найденные окна (Ваше время):**\n\n";
         var buttons = new List<InlineKeyboardButton[]>();
 
-        foreach (var interval in intersections.Take(5))
+        foreach (var interval in intersections.Take(MaxPlanningResultsToShow))
         {
-            var admin = await GetPlayerAsync(userId, ct);
-            var localStart = interval.Start.AddHours(admin?.TimeZoneOffset ?? 0);
-            var localEnd = interval.End.AddHours(admin?.TimeZoneOffset ?? 0);
+            var admin = await UserService.GetPlayerAsync(userId, ct);
+            var localStart = ConvertUtcToLocal(interval.Start, admin?.TimeZoneOffset ?? 0);
+            var localEnd = ConvertUtcToLocal(interval.End, admin?.TimeZoneOffset ?? 0);
 
             var timeStr = $"{localStart:dd.MM HH:mm} - {localEnd:HH:mm}";
             resultText += $"🔹 {timeStr}\n";
 
-            buttons.Add([InlineKeyboardButton.WithCallbackData($"✅ {timeStr}", $"{CallbackPrefixes.ConfirmTime}{groupId}_{interval.Start:yyyyMMddHH}")]);
+            buttons.Add([
+                InlineKeyboardButton.WithCallbackData(
+                    $"✅ {timeStr}",
+                    $"{CallbackPrefixes.ConfirmTime}{groupId}_{interval.Start:yyyyMMddHH}")
+            ]);
         }
 
         await EditTextAsync(
@@ -374,6 +403,7 @@ public class CallbackHandler : BaseHandler
     /// </summary>
     private async Task HandleFinishVotingAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
     {
+        // Получаем игрока с группами для отображения статистики
         var player = await Db.Players
             .Include(p => p.Groups)
             .FirstOrDefaultAsync(p => p.TelegramId == userId, ct);
@@ -389,7 +419,7 @@ public class CallbackHandler : BaseHandler
             : "Без группы";
 
         await EditTextAsync(callbackQuery, "✅ Данные сохранены!", ct: ct);
-        
+
         await NotifyMainChatAsync(
             $"🔔 **{player.Username}** [{groupNames}] завершил заполнение расписания!",
             ct);
@@ -408,27 +438,27 @@ public class CallbackHandler : BaseHandler
     {
         var groupId = int.Parse(callbackQuery.Data!.Replace(CallbackPrefixes.JoinGroup, string.Empty));
 
-        var player = await GetPlayerWithGroupsAsync(userId, ct);
-        var group = await Db.Groups.FindAsync([groupId], ct);
+        // Используем UserService для добавления в группу
+        var success = await AddPlayerToGroupAsync(userId, groupId, ct);
 
-        if (group is null)
+        if (!success)
         {
-            await AnswerCallbackAsync(callbackQuery, "⚠️ Группа не найдена", showAlert: true, ct);
+            var group = await GetGroupAsync(groupId, ct);
+            var message = group is not null
+                ? $"ℹ️ Вы уже состоите в группе **{group.Name}**"
+                : "⚠️ Группа не найдена";
+
+            await AnswerCallbackAsync(callbackQuery, message, showAlert: true, ct);
             return;
         }
 
-        if (player!.Groups.Any(g => g.Id == groupId))
+        var addedGroup = await GetGroupAsync(groupId, ct);
+        if (addedGroup is not null)
         {
-            await AnswerCallbackAsync(callbackQuery, "ℹ️ Вы уже состоите в этой группе", ct: ct);
-            return;
+            _logger.LogInformation("Пользователь {UserId} вступил в группу {GroupId} [{GroupName}]", userId, groupId, addedGroup.Name);
+            await EditTextAsync(callbackQuery, $"⚔️ Вы вступили в группу **{addedGroup.Name}**!", ct: ct);
         }
 
-        player.Groups.Add(group);
-        await Db.SaveChangesAsync(ct);
-
-        _logger.LogInformation("Пользователь {UserId} вступил в группу {GroupId} [{GroupName}]", userId, groupId, group.Name);
-
-        await EditTextAsync(callbackQuery, $"⚔️ Вы вступили в группу **{group.Name}**!", ct: ct);
         await AnswerCallbackAsync(callbackQuery, ct: ct);
     }
 
@@ -444,7 +474,7 @@ public class CallbackHandler : BaseHandler
         }
 
         var groupId = int.Parse(callbackQuery.Data!.Replace(CallbackPrefixes.ConfirmDeleteGroup, string.Empty));
-        var group = await Db.Groups.FindAsync([groupId], ct);
+        var group = await GetGroupAsync(groupId, ct);
 
         if (group is null)
         {
@@ -462,24 +492,59 @@ public class CallbackHandler : BaseHandler
     }
 
     /// <summary>
-    /// Получает игрока по Telegram ID.
+    /// Обрабатывает выход пользователя из группы.
     /// </summary>
-    private async Task<Player?> GetPlayerAsync(long telegramId, CancellationToken ct) =>
-        await Db.Players.FindAsync([telegramId], ct);
+    private async Task HandleLeaveGroupAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        var groupId = int.Parse(callbackQuery.Data!.Replace(CallbackPrefixes.LeaveGroup, string.Empty));
+
+        var success = await RemovePlayerFromGroupAsync(userId, groupId, ct);
+
+        if (!success)
+        {
+            await AnswerCallbackAsync(callbackQuery, "ℹ️ Вы не состоите в этой группе", ct: ct);
+            return;
+        }
+
+        var group = await GetGroupAsync(groupId, ct);
+        if (group is not null)
+        {
+            _logger.LogInformation("Пользователь {UserId} покинул группу {GroupId} [{GroupName}]", userId, groupId, group.Name);
+            await EditTextAsync(callbackQuery, $"🚪 Вы покинули группу **{group.Name}**.", ct: ct);
+        }
+
+        await AnswerCallbackAsync(callbackQuery, ct: ct);
+    }
+
+    #endregion
+
+    #region Вспомогательные методы для работы с сущностями
 
     /// <summary>
     /// Получает игрока с загруженными слотами доступности.
     /// </summary>
+    /// <remarks>
+    /// Этот метод оставлен с прямым доступом к DbContext, так как UserService
+    /// не предоставляет метод с Include для слотов. В будущем можно добавить
+    /// UserService.GetPlayerWithSlotsAsync().
+    /// </remarks>
     private async Task<Player?> GetPlayerWithSlotsAsync(long telegramId, CancellationToken ct) =>
         await Db.Players
+            .AsNoTracking()
             .Include(p => p.Slots)
             .FirstOrDefaultAsync(p => p.TelegramId == telegramId, ct);
 
     /// <summary>
-    /// Получает игрока с загруженными группами.
+    /// Получает группу по идентификатору.
     /// </summary>
-    private async Task<Player?> GetPlayerWithGroupsAsync(long telegramId, CancellationToken ct) =>
-        await Db.Players
-            .Include(p => p.Groups)
-            .FirstOrDefaultAsync(p => p.TelegramId == telegramId, ct);
+    private async Task<Group?> GetGroupAsync(int groupId, CancellationToken ct) =>
+        await Db.Groups.FindAsync([groupId], ct);
+
+    /// <summary>
+    /// Получает список всех групп.
+    /// </summary>
+    private async Task<List<Group>> GetAllGroupsAsync(CancellationToken ct) =>
+        await Db.Groups.ToListAsync(ct);
+
+    #endregion
 }
