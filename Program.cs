@@ -8,8 +8,12 @@ using Telegram.Bot;
 var builder = Host.CreateApplicationBuilder(args);
 
 // 1. Регистрация настроек (токен и БД)
-// В реальности лучше брать из builder.Configuration
-var botToken = "ВАШ_ТОКЕН";
+var botToken = builder.Configuration["BotToken"];
+
+if (string.IsNullOrEmpty(botToken))
+{
+    throw new Exception("BotToken не найден в appsettings.json!");
+}
 
 // 2. Подключаем Telegram Bot Client
 builder.Services.AddSingleton<ITelegramBotClient>(provider => 
