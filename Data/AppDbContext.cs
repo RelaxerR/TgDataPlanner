@@ -103,9 +103,6 @@ public class AppDbContext : DbContext
             entity.HasIndex(p => p.Username)
                 .HasDatabaseName("IX_Players_Username");
 
-            entity.HasIndex(p => p.LastActivityAt)
-                .HasDatabaseName("IX_Players_LastActivity");
-
             entity.Property(p => p.Username)
                 .IsRequired()
                 .HasMaxLength(32)

@@ -5,6 +5,7 @@ using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using TgDataPlanner.Common;
 using TgDataPlanner.Data;
 using TgDataPlanner.Data.Entities;
 using TgDataPlanner.Services;
@@ -323,7 +324,7 @@ public abstract class BaseHandler
     /// <returns>True, если состояние обновлено успешно.</returns>
     protected Task<bool> SetPlayerStateAsync(
         long telegramId,
-        string? state,
+        PlayerState state,
         CancellationToken ct = default) =>
         UserService.SetPlayerStateAsync(telegramId, state, ct);
 

@@ -79,7 +79,6 @@ public class UserService
                 return player;
             
             player.Username = username;
-            player.TouchActivity();
             await _db.SaveChangesAsync(ct);
             _logger.LogDebug("Обновлено имя пользователя {TelegramId}: {OldName} -> {NewName}",
                 telegramId, player.Username, username);
@@ -109,7 +108,6 @@ public class UserService
 
         var oldOffset = player.TimeZoneOffset;
         player.TimeZoneOffset = timeZoneOffset;
-        player.TouchActivity();
 
         await _db.SaveChangesAsync(ct);
 
@@ -129,7 +127,7 @@ public class UserService
     /// <returns>True, если состояние обновлено успешно.</returns>
     public async Task<bool> SetPlayerStateAsync(
         long telegramId,
-        string? state,
+        PlayerState state,
         CancellationToken ct = default)
     {
         var player = await GetPlayerAsync(telegramId, ct);
@@ -137,13 +135,12 @@ public class UserService
             return false;
 
         player.CurrentState = state;
-        player.TouchActivity();
 
         await _db.SaveChangesAsync(ct);
 
         _logger.LogDebug(
             "Состояние игрока {TelegramId} установлено в: {State}",
-            telegramId, state ?? "(null)");
+            telegramId, state.ToString());
 
         return true;
     }
@@ -184,7 +181,6 @@ public class UserService
         }
 
         player.Groups.Add(group);
-        player.TouchActivity();
 
         await _db.SaveChangesAsync(ct);
 
@@ -215,21 +211,19 @@ public class UserService
             return false;
 
         var group = player.Groups.FirstOrDefault(g => g.Id == groupId);
-        if (group is not null)
-        {
-            player.Groups.Remove(group);
-            player.TouchActivity();
+        if (group is null)
+            return false;
+        
+        player.Groups.Remove(group);
 
-            await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesAsync(ct);
 
-            _logger.LogInformation(
-                "Игрок {Username} ({TelegramId}) покинул группу '{GroupName}' ({GroupId})",
-                player.Username, telegramId, group.Name, groupId);
+        _logger.LogInformation(
+            "Игрок {Username} ({TelegramId}) покинул группу '{GroupName}' ({GroupId})",
+            player.Username, telegramId, group.Name, groupId);
 
-            return true;
-        }
+        return true;
 
-        return false;
     }
 
     /// <summary>
@@ -265,7 +259,6 @@ public class UserService
         var player = await GetPlayerAsync(telegramId, ct);
         if (player is not null)
         {
-            player.TouchActivity();
             await _db.SaveChangesAsync(ct);
         }
     }
@@ -278,25 +271,5 @@ public class UserService
     /// <returns>True, если игрок найден.</returns>
     public async Task<bool> PlayerExistsAsync(long telegramId, CancellationToken ct = default) =>
         await _db.Players.AnyAsync(p => p.TelegramId == telegramId, ct);
-
-    /// <summary>
-    /// Получает общую статистику по игрокам.
-    /// </summary>
-    /// <param name="ct">Токен отмены операции.</param>
-    /// <returns>Объект со статистикой.</returns>
-    public async Task<PlayerStatistics> GetStatisticsAsync(CancellationToken ct = default)
-    {
-        var totalPlayers = await _db.Players.CountAsync(ct);
-        var playersWithSlots = await _db.Players.CountAsync(p => p.Slots.Any(), ct);
-        var playersInGroups = await _db.Players.CountAsync(p => p.Groups.Any(), ct);
-
-        return new PlayerStatistics
-        {
-            TotalPlayers = totalPlayers,
-            PlayersWithSlots = playersWithSlots,
-            PlayersInGroups = playersInGroups,
-            ActiveLast24Hours = await _db.Players.CountAsync(
-                p => p.LastActivityAt >= DateTime.UtcNow.AddHours(-24), ct)
-        };
-    }
+    
 }

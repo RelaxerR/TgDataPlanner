@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
+using TgDataPlanner.Common;
 using TgDataPlanner.Services;
 
 namespace TgDataPlanner.Data.Entities;
@@ -63,18 +64,7 @@ public partial class Player
     /// Примеры значений: "AwaitingGroupName", "SelectingDate", null — нет активного состояния.
     /// </remarks>
     [StringLength(50)]
-    public string? CurrentState { get; set; }
-
-    /// <summary>
-    /// Дата и время регистрации игрока в системе.
-    /// </summary>
-    public DateTime RegisteredAt { get; init; } = DateTime.UtcNow;
-
-    /// <summary>
-    /// Дата и время последнего взаимодействия с ботом.
-    /// Обновляется при каждой обработке команды от игрока.
-    /// </summary>
-    public DateTime LastActivityAt { get; set; } = DateTime.UtcNow;
+    public PlayerState CurrentState { get; set; }
 
     /// <summary>
     /// Коллекция групп, в которых состоит игрок.
@@ -104,15 +94,7 @@ public partial class Player
         TelegramId = telegramId;
         Username = SanitizeUsername(username);
         TimeZoneOffset = ClampTimeZoneOffset(timeZoneOffset);
-        RegisteredAt = DateTime.UtcNow;
-        LastActivityAt = DateTime.UtcNow;
     }
-
-    /// <summary>
-    /// Обновляет время последней активности игрока.
-    /// Следует вызывать при каждой успешной обработке команды от пользователя.
-    /// </summary>
-    public void TouchActivity() => LastActivityAt = DateTime.UtcNow;
 
     /// <summary>
     /// Проверяет, состоит ли игрок в указанной группе.

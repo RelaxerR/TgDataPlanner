@@ -3,8 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using TgDataPlanner.Common;
 using TgDataPlanner.Data;
 using TgDataPlanner.Data.Entities;
 using TgDataPlanner.Services;
@@ -38,6 +38,7 @@ public class CallbackHandler : BaseHandler
         public const string LeaveGroup = "leave_group_";
         public const string RsvpYes = "rsvp_yes_";
         public const string RsvpNo = "rsvp_no_";
+        public const string StartRequest = "start_request_";
     }
 
     /// <summary>
@@ -129,6 +130,13 @@ public class CallbackHandler : BaseHandler
             return;
         }
 
+        var player = await UserService.GetPlayerAsync(userId, ct);
+        if (player == null)
+        {
+            Logger.LogWarning("Игрок с TelegramId {UserId} не найден при обработке callback. Действие: {Data}", userId, data);
+            return;
+        }
+
         switch (data)
         {
             case CallbackPrefixes.CancelAction:
@@ -172,7 +180,7 @@ public class CallbackHandler : BaseHandler
                 break;
             
             case var _ when data.StartsWith(CallbackPrefixes.ConfirmTime):
-                await HandleConfirmTimeAsync(callbackQuery, userId, ct);
+                await HandleConfirmTimeAsync(callbackQuery, player, ct);
                 break;
 
             case var _ when data.StartsWith(CallbackPrefixes.RsvpYes):
@@ -181,6 +189,10 @@ public class CallbackHandler : BaseHandler
 
             case var _ when data.StartsWith(CallbackPrefixes.RsvpNo):
                 await HandleRsvpAsync(callbackQuery, userId, isComing: false, ct);
+                break;
+            
+            case var _ when data.StartsWith(CallbackPrefixes.StartRequest):
+                await HandleStartRequestAsync(callbackQuery, userId, ct); // Было: break;
                 break;
 
             default:
@@ -195,9 +207,9 @@ public class CallbackHandler : BaseHandler
     /// <summary>
     /// Обрабатывает выбор админом конкретного времени для сессии и публикует анонс.
     /// </summary>
-    private async Task HandleConfirmTimeAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    private async Task HandleConfirmTimeAsync(CallbackQuery callbackQuery, Player player, CancellationToken ct)
     {
-        if (userId != AdminId)
+        if (player.TelegramId != AdminId)
         {
             await AnswerCallbackAsync(callbackQuery, "🧙 Только Мастер может назначать игру!", showAlert: true, ct);
             return;
@@ -226,14 +238,14 @@ public class CallbackHandler : BaseHandler
 
         // Обновляем данные группы
         group.CurrentSessionUtc = sessionTimeUtc;
-        group.ConfirmedPlayerIds = string.Empty; 
+        group.ConfirmedPlayers = []; 
         await Db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Мастер {UserId} назначил сессию для группы {GroupName} на {Time} UTC", 
-            userId, group.Name, sessionTimeUtc);
+            player.TelegramId, group.Name, sessionTimeUtc);
 
         // Получаем локальное время админа для текста
-        var admin = await Db.Players.FindAsync([userId], ct);
+        var admin = await Db.Players.FindAsync([player.TelegramId], ct);
         var localTime = sessionTimeUtc.AddHours(admin?.TimeZoneOffset ?? 0);
 
         // Редактируем сообщение у админа
@@ -330,7 +342,7 @@ public class CallbackHandler : BaseHandler
     private async Task HandleCancelActionAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
     {
         // Сбрасываем состояние через UserService
-        await SetPlayerStateAsync(userId, null, ct);
+        await SetPlayerStateAsync(userId, PlayerState.Idle, ct);
 
         await EditTextAsync(
             callbackQuery,
@@ -475,6 +487,93 @@ public class CallbackHandler : BaseHandler
             ct: ct);
 
         await AnswerCallbackAsync(callbackQuery, ct: ct);
+    }
+    
+    /// <summary>
+    /// Отправляет запрос на ввод свободного времени для новой игровой сессии.
+    /// </summary>
+    private async Task HandleStartRequestAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        // Проверяем права администратора
+        if (!IsAdmin(userId))
+        {
+            await AnswerCallbackAsync(callbackQuery, "🔒 Только Мастер может запрашивать свободное время", showAlert: true, ct);
+            return;
+        }
+
+        // Парсим ID группы из callback-данных
+        var groupIdString = callbackQuery.Data!.Replace(CallbackPrefixes.StartRequest, string.Empty);
+        if (!int.TryParse(groupIdString, out var groupId))
+        {
+            _logger.LogWarning("Неверный формат ID группы в запросе свободного времени: {Data}", callbackQuery.Data);
+            await AnswerCallbackAsync(callbackQuery, "⚠️ Ошибка обработки запроса", showAlert: true, ct);
+            return;
+        }
+
+        // Получаем группу с игроками
+        var group = await Db.Groups
+            .Include(g => g.Players)
+            .FirstOrDefaultAsync(g => g.Id == groupId, ct);
+        
+        if (group is null)
+        {
+            await AnswerCallbackAsync(callbackQuery, "⚠️ Группа не найдена", showAlert: true, ct);
+            return;
+        }
+
+        _logger.LogInformation(
+            "Мастер {AdminId} инициировал запрос свободного времени для группы {GroupName} ({GroupId})",
+            userId, group.Name, groupId);
+
+        // Формируем сообщение для игроков
+        var requestMessage = 
+            $"🎲 **Запрос свободного времени**\n\n" +
+            $"Мастер запрашивает ваше расписание для планирования следующей сессии группы **{group.Name}**.\n\n" +
+            $"👉 Пожалуйста, укажите когда вы свободны, используя команду /free\n\n" +
+            $"📝 Инструкция:\n" +
+            $"1. Нажмите /free или введите эту команду в чат с ботом\n" +
+            $"2. Выберите удобные даты в календаре\n" +
+            $"3. Отметьте часы, когда вы доступны для игры\n" +
+            $"4. Подтвердите выбор кнопкой «Готово»\n\n" +
+            $"⏰ Чем быстрее вы заполните расписание, тем скорее Мастер сможет назначить игру!";
+
+        // Отправляем уведомления всем игрокам группы
+        var notifiedCount = 0;
+        foreach (var player in group.Players)
+        {
+            try
+            {
+                await NotifyAllInGroupAsync(group, requestMessage, ct);
+                notifiedCount++;
+                _logger.LogDebug("Запрос свободного времени отправлен игроку {PlayerId}", player.TelegramId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Не удалось отправить запрос игроку {PlayerId} группы {GroupId}",
+                    player.TelegramId, groupId);
+            }
+        }
+
+        // Уведомляем админа о результате
+        await EditTextAsync(
+            callbackQuery,
+            $"✅ Запрос отправлен!\n\n" +
+            $"📬 Уведомлено игроков: **{notifiedCount}/{group.Players.Count}**\n" +
+            $"👥 Группа: **{group.Name}**\n\n" +
+            $"Как только игроки заполнят расписание, запустите поиск окон кнопкой «🔍 Найти окна».",
+            ct: ct);
+
+        // Отправляем уведомление в основной чат (если настроен)
+        await NotifyMainChatAsync(
+            $"🔔 Мастер запросил свободное время для группы **{group.Name}**. " +
+            $"Игроки, проверьте сообщения от бота!",
+            ct: ct);
+
+        await AnswerCallbackAsync(callbackQuery, 
+            $"Запрос отправлен {notifiedCount} игрокам", 
+            ct: ct);
     }
 
     /// <summary>
@@ -670,8 +769,7 @@ public class CallbackHandler : BaseHandler
     /// </remarks>
     private async Task<Player?> GetPlayerWithSlotsAsync(long telegramId, CancellationToken ct) =>
         await Db.Players
-            .AsNoTracking()
-            .Include(p => p.Slots)
+            .Include(p => p.Slots)  // ← Убрали .AsNoTracking()
             .FirstOrDefaultAsync(p => p.TelegramId == telegramId, ct);
 
     /// <summary>

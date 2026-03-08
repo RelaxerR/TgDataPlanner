@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using TgDataPlanner.Common;
 
 namespace TgDataPlanner.Data.Entities;
@@ -17,9 +18,8 @@ public sealed class Group
     
     // TODO: Refactor
     public DateTime? CurrentSessionUtc { get; set; }
-    public string? SessionCreatorUsername { get; set; }
-    // Список ID игроков, которые подтвердили участие (простой вариант - JSON или строка)
-    public string ConfirmedPlayerIds { get; set; } = ""; 
+    [NotMapped]
+    public List<Player> ConfirmedPlayers { get; set; } = []; 
 
 
     /// <summary>
