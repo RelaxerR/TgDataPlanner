@@ -18,8 +18,21 @@ public sealed class Group
     
     // TODO: Refactor
     public DateTime? CurrentSessionUtc { get; set; }
-    [NotMapped]
-    public List<Player> ConfirmedPlayers { get; set; } = []; 
+    
+    /// <summary>
+    /// Список TelegramId игроков, подтвердивших участие (RSVP Yes).
+    /// </summary>
+    public List<long> ConfirmedPlayerIds { get; set; } = [];
+
+    /// <summary>
+    /// Список TelegramId игроков, отказавшихся от участия (RSVP No).
+    /// </summary>
+    public List<long> DeclinedPlayerIds { get; set; } = [];
+
+    /// <summary>
+    /// Статус сессии: Pending (ожидание ответов), Confirmed (подтверждена), Cancelled (отменена).
+    /// </summary>
+    public SessionStatus SessionStatus { get; set; } = SessionStatus.Pending;
 
 
     /// <summary>
