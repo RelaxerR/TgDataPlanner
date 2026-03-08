@@ -205,6 +205,75 @@ public class CallbackHandler : BaseHandler
     #region Обработчики колбэков
 
     /// <summary>
+    /// Автоматически запускает поиск окон для группы и отправляет результаты админу.
+    /// </summary>
+    private async Task AutoRunPlanningForGroupAsync(Group group, CancellationToken ct)
+    {
+        _logger.LogInformation("🤖 Авто-планирование для группы {GroupName} ({GroupId})", 
+            group.Name, group.Id);
+
+        var intersections = await SchedulingService.FindIntersectionsAsync(
+            group.Id, MinPlanningDurationHours);
+
+        // Находим админа для отправки результатов
+        var admin = await UserService.GetPlayerAsync(AdminId, ct);
+        if (admin is null)
+        {
+            _logger.LogWarning("Не удалось найти админа для авто-планирования группы {GroupId}", group.Id);
+            return;
+        }
+
+        if (intersections.Count == 0)
+        {
+            await SendTextAsync(
+                AdminId,
+                $"😔 **Авто-планирование: {group.Name}**\n\n" +
+                $"К сожалению, общие окна не найдены. Возможно, игроки указали непересекающееся время.\n\n" +
+                $"💡 Попробуйте:\n" +
+                $"• Попросить игроков добавить больше вариантов\n" +
+                $"• Уменьшить минимальную длительность сессии",
+                ct: ct);
+            return;
+        }
+
+        // Формируем сообщение с результатами (аналогично HandleStartPlanningAsync)
+        var resultText = $"🤖 **Авто-планирование: {group.Name}**\n\n" +
+                         $"✅ Все игроки заполнили расписание!\n" +
+                         $"🗓 Найдено окон (время админа):\n";
+        
+        var buttons = new List<InlineKeyboardButton[]>();
+
+        foreach (var interval in intersections.Take(MaxPlanningResultsToShow))
+        {
+            var localStart = ConvertUtcToLocal(interval.Start, admin.TimeZoneOffset);
+            var localEnd = ConvertUtcToLocal(interval.End, admin.TimeZoneOffset);
+            var timeStr = $"{localStart:dd.MM HH:mm} - {localEnd:HH:mm}";
+            
+            resultText += $"🔹 {timeStr}\n";
+            buttons.Add([
+                InlineKeyboardButton.WithCallbackData(
+                    $"✅ {timeStr}",
+                    $"{CallbackPrefixes.ConfirmTime}{group.Id}_{interval.Start:yyyyMMddHH}")
+            ]);
+        }
+
+        // Отправляем результаты админу в ЛС
+        await SendTextAsync(
+            AdminId,
+            resultText,
+            replyMarkup: new InlineKeyboardMarkup(buttons),
+            ct: ct);
+
+        // Уведомляем игроков в чате группы
+        await NotifyMainChatAsync(
+            $"🎯 **Готово!** Мастер получил варианты времени для группы **{group.Name}**. " +
+            $"Ожидайте анонс сессии! ⚔️",
+            ct: ct);
+
+        _logger.LogInformation("✅ Результаты авто-планирования отправлены админу для группы {GroupName}", group.Name);
+    }
+    
+    /// <summary>
     /// Обрабатывает выбор админом конкретного времени для сессии и публикует анонс.
     /// </summary>
     private async Task HandleConfirmTimeAsync(CallbackQuery callbackQuery, Player player, CancellationToken ct)
@@ -635,7 +704,6 @@ public class CallbackHandler : BaseHandler
     /// </summary>
     private async Task HandleFinishVotingAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
     {
-        // Получаем игрока с группами для отображения статистики
         var player = await Db.Players
             .Include(p => p.Groups)
             .FirstOrDefaultAsync(p => p.TelegramId == userId, ct);
@@ -646,7 +714,7 @@ public class CallbackHandler : BaseHandler
             return;
         }
 
-        var groupNames = player.Groups.Count != 0
+        var groupNames = player.Groups.Any()
             ? string.Join(", ", player.Groups.Select(g => g.Name))
             : "Без группы";
 
@@ -659,6 +727,21 @@ public class CallbackHandler : BaseHandler
         _logger.LogInformation(
             "Пользователь {UserId} [@{Username}] завершил заполнение расписания для групп: {Groups}",
             userId, player.Username, groupNames);
+
+        // 🔹 НОВОЕ: Проверка авто-планирования для каждой группы игрока
+        foreach (var group in player.Groups.ToList()) // ToList() для безопасной итерации
+        {
+            // Перезагружаем группу с игроками для актуальной проверки
+            var groupWithPlayers = await Db.Groups
+                .Include(g => g.Players)
+                .FirstOrDefaultAsync(g => g.Id == group.Id, ct);
+
+            if (groupWithPlayers == null || !await AreAllPlayersReadyAsync(groupWithPlayers, ct))
+                continue;
+            
+            // Запускаем авто-планирование (только если админ ещё не назначил сессию)
+            await AutoRunPlanningForGroupAsync(groupWithPlayers, ct);
+        }
 
         await AnswerCallbackAsync(callbackQuery, ct: ct);
     }
@@ -783,6 +866,38 @@ public class CallbackHandler : BaseHandler
     /// </summary>
     private async Task<List<Group>> GetAllGroupsAsync(CancellationToken ct) =>
         await Db.Groups.ToListAsync(ct);
+    
+    /// <summary>
+    /// Проверяет, есть ли у всех игроков группы хотя бы один слот доступности.
+    /// </summary>
+    private async Task<bool> AreAllPlayersReadyAsync(Group group, CancellationToken ct)
+    {
+        // Исключаем админа из проверки — он планирует, а не участвует в голосовании
+        var playerIds = group.Players
+            .Where(p => p.TelegramId != AdminId)
+            .Select(p => p.TelegramId)
+            .ToList();
+
+        // Если в группе только админ — считаем готовой
+        if (playerIds.Count == 0) return true;
+
+        // Проверяем наличие слотов у каждого игрока (эффективный запрос)
+        foreach (var playerId in playerIds)
+        {
+            var hasSlot = await Db.Slots
+                .AnyAsync(s => s.PlayerId == playerId, ct);
+
+            if (hasSlot)
+                continue;
+            
+            _logger.LogDebug("Игрок {PlayerId} в группе {GroupName} ещё не заполнил расписание", 
+                playerId, group.Name);
+            return false;
+        }
+
+        _logger.LogInformation("✅ Все игроки группы {GroupName} заполнили расписание", group.Name);
+        return true;
+    }
 
     #endregion
 }
