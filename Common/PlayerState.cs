@@ -1,7 +1,7 @@
 namespace TgDataPlanner.Common;
 
-public enum GroupState
+public enum PlayerState
 {
     Idle,
-    FreeRequest,
+    AwaitingGroupName
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using TgDataPlanner.Common;
 
 namespace TgDataPlanner.Data.Entities;
@@ -14,6 +15,25 @@ public sealed class Group
     /// </summary>
     [Key]
     public int Id { get; init; }
+    
+    // TODO: Refactor
+    public DateTime? CurrentSessionUtc { get; set; }
+    
+    /// <summary>
+    /// Список TelegramId игроков, подтвердивших участие (RSVP Yes).
+    /// </summary>
+    public List<long> ConfirmedPlayerIds { get; set; } = [];
+
+    /// <summary>
+    /// Список TelegramId игроков, отказавшихся от участия (RSVP No).
+    /// </summary>
+    public List<long> DeclinedPlayerIds { get; set; } = [];
+
+    /// <summary>
+    /// Статус сессии: Pending (ожидание ответов), Confirmed (подтверждена), Cancelled (отменена).
+    /// </summary>
+    public SessionStatus SessionStatus { get; set; } = SessionStatus.Pending;
+
 
     /// <summary>
     /// Отображаемое название группы (например, "Кампания Драконьего Копья").

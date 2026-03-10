@@ -103,9 +103,6 @@ public class AppDbContext : DbContext
             entity.HasIndex(p => p.Username)
                 .HasDatabaseName("IX_Players_Username");
 
-            entity.HasIndex(p => p.LastActivityAt)
-                .HasDatabaseName("IX_Players_LastActivity");
-
             entity.Property(p => p.Username)
                 .IsRequired()
                 .HasMaxLength(32)
@@ -115,7 +112,7 @@ public class AppDbContext : DbContext
                 .HasMaxLength(50);
         });
     }
-
+    
     /// <summary>
     /// Настраивает сущность <see cref="Group"/>: индексы и ограничения.
     /// </summary>
@@ -125,9 +122,9 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(g => g.Id);
 
+            // Стало: индекс для производительности, но без уникальности
             entity.HasIndex(g => g.TelegramChatId)
-                .HasDatabaseName("IX_Groups_ChatId")
-                .IsUnique();
+                .HasDatabaseName("IX_Groups_ChatId"); // ← убрали .IsUnique()
 
             entity.HasIndex(g => g.State)
                 .HasDatabaseName("IX_Groups_State");

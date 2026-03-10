@@ -5,6 +5,7 @@ using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using TgDataPlanner.Common;
 using TgDataPlanner.Data;
 using TgDataPlanner.Data.Entities;
 using TgDataPlanner.Services;
@@ -33,15 +34,7 @@ public class CommandHandler : BaseHandler
         public const string TimeZone = "/timezone";
         public const string Free = "/free";
         public const string Plan = "/plan";
-        public const string Remind = "/remind";
-    }
-
-    /// <summary>
-    /// Состояния машины состояний игрока.
-    /// </summary>
-    private static class PlayerStates
-    {
-        public const string AwaitingGroupName = "AwaitingGroupName";
+        public const string Request = "/request";
     }
 
     /// <summary>
@@ -112,7 +105,7 @@ public class CommandHandler : BaseHandler
         string text,
         CancellationToken ct)
     {
-        if (player.CurrentState != PlayerStates.AwaitingGroupName)
+        if (player.CurrentState != PlayerState.AwaitingGroupName)
             return false;
 
         await FinalizeGroupCreationAsync(message, player, text, ct);
@@ -162,6 +155,10 @@ public class CommandHandler : BaseHandler
             case var _ when text.StartsWith(Commands.Plan):
                 await HandlePlanCommandAsync(message, userId, ct);
                 break;
+            
+            case Commands.Request:
+                await HandleRequestCommandAsync(message, player, ct);
+                break;
 
             default:
                 _logger.LogDebug("Неизвестная команда '{Command}' от пользователя {UserId}", text, userId);
@@ -192,6 +189,7 @@ public class CommandHandler : BaseHandler
             commands.AppendLine("\n**Команды Мастера:**");
             commands.AppendLine("/group — Создать новую группу");
             commands.AppendLine("/delgroup — Удалить группу");
+            commands.AppendLine("/request — Запросить у игроков свободное время"); // ➕ Новая строка
             commands.AppendLine("/plan — Найти идеальное время для игры");
             commands.AppendLine("/remind — Напомнить ленивым игрокам о заполнении");
         }
@@ -216,7 +214,7 @@ public class CommandHandler : BaseHandler
         }
 
         // Устанавливаем состояние через UserService
-        await SetPlayerStateAsync(userId, PlayerStates.AwaitingGroupName, ct);
+        await SetPlayerStateAsync(userId, PlayerState.AwaitingGroupName, ct);
 
         var keyboard = new InlineKeyboardMarkup((InlineKeyboardButton[])[
             InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel_action")
@@ -367,6 +365,33 @@ public class CommandHandler : BaseHandler
                 ct: ct);
         }
     }
+    
+    private async Task HandleRequestCommandAsync(Message message, Player player, CancellationToken ct)
+    {
+        if (!IsAdmin(player.TelegramId))
+            return;
+
+        var groups = await Db.Groups.ToListAsync(ct);
+
+        if (groups.Count == 0)
+        {
+            await SendTextAsync(message.Chat.Id, "❌ Сначала создайте группу через /group", ct: ct);
+            return;
+        }
+
+        var buttons = groups.Select(g =>
+        {
+            if (g.Name != null)
+                return (List<InlineKeyboardButton>) [InlineKeyboardButton.WithCallbackData(g.Name, $"start_request_{g.Id}")];
+            return null;
+        });
+
+        await SendTextAsync(
+            message.Chat.Id,
+            "🎯 **Запрос на свободное время**\nВыберите группу, для которой нужно выполнить запрос:",
+            replyMarkup: new InlineKeyboardMarkup(buttons!),
+            ct: ct);
+    }
 
     /// <summary>
     /// Обрабатывает команду /plan (поиск свободного времени для группы).
@@ -421,7 +446,7 @@ public class CommandHandler : BaseHandler
         };
 
         // Сбрасываем состояние через UserService
-        await SetPlayerStateAsync(player.TelegramId, null, ct);
+        await SetPlayerStateAsync(player.TelegramId, PlayerState.Idle, ct);
 
         Db.Groups.Add(newGroup);
         await Db.SaveChangesAsync(ct);

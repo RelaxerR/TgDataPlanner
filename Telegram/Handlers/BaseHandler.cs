@@ -5,6 +5,7 @@ using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using TgDataPlanner.Common;
 using TgDataPlanner.Data;
 using TgDataPlanner.Data.Entities;
 using TgDataPlanner.Services;
@@ -135,6 +136,53 @@ public abstract class BaseHandler
             text: $"🔔 {text}",
             parseMode: ParseMode.Markdown,
             cancellationToken: ct);
+    }
+    
+    /// <summary>
+    /// Отправляет уведомление каждому в группе
+    /// </summary>
+    /// <param name="group">Группа.</param>
+    /// <param name="text">Текст уведомления.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    protected async Task NotifyAllInGroupAsync(Group group, string text, CancellationToken ct = default)
+    {
+        var users = group.Players.Select(p => p.TelegramId).ToList();
+        foreach (var user in users)
+        {
+            await BotClient.SendMessage(
+                chatId: user,
+                text: $"🔔 {text}",
+                parseMode: ParseMode.Markdown,
+                cancellationToken: ct);
+            
+            Logger.LogDebug("Уведомление для [@{user}]: {TextPreview}", user, Truncate(text, 50));
+        }
+    }
+    
+    
+    /// <summary>
+    /// Отправляет уведомление каждому в группе
+    /// </summary>
+    /// <param name="group">Группа.</param>
+    /// <param name="text">Текст уведомления.</param>
+    /// <param name="replyMarkup">Необязательная новая разметка клавиатуры.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    protected async Task NotifyAllInGroupAsync(Group group, string text, InlineKeyboardMarkup? replyMarkup = null, CancellationToken ct = default)
+    {
+        var users = group.Players.Select(p => p.TelegramId).ToList();
+        foreach (var user in users)
+        {
+            await BotClient.SendMessage(
+                chatId: user,
+                text: $"🔔 {text}",
+                parseMode: ParseMode.Markdown,
+                replyMarkup: replyMarkup,
+                cancellationToken: ct);
+            
+            Logger.LogDebug("Уведомление для [@{user}]: {TextPreview}", user, Truncate(text, 50));
+        }
     }
 
     /// <summary>
@@ -276,7 +324,7 @@ public abstract class BaseHandler
     /// <returns>True, если состояние обновлено успешно.</returns>
     protected Task<bool> SetPlayerStateAsync(
         long telegramId,
-        string? state,
+        PlayerState state,
         CancellationToken ct = default) =>
         UserService.SetPlayerStateAsync(telegramId, state, ct);
 
