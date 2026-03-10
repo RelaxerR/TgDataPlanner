@@ -209,28 +209,41 @@ public class CallbackHandler : BaseHandler
     /// </summary>
     private async Task AutoRunPlanningForGroupAsync(Group group, CancellationToken ct)
     {
-        _logger.LogInformation("🤖 Авто-планирование для группы {GroupName} ({GroupId})", 
+        _logger.LogInformation("🤖 Авто-планирование для группы {GroupName} ({GroupId})",
             group.Name, group.Id);
-
         var intersections = await SchedulingService.FindIntersectionsAsync(
             group.Id, MinPlanningDurationHours);
-
         if (intersections.Count == 0)
         {
+            // 🔹 Уведомляем админа
             await SendTextAsync(
                 AdminId,
-                $"😔 **Авто-планирование: {group.Name}**\n\n" +
-                $"К сожалению, общие окна не найдены.\n\n" +
+                $"😔 **Авто-планирование: {group.Name}**\n" +
+                $"К сожалению, общие окна не найдены.\n" +
                 $"💡 Попробуйте:\n" +
                 $"• Попросить игроков добавить больше вариантов\n" +
                 $"• Уменьшить минимальную длительность сессии",
                 ct: ct);
+
+            // 🔹 Уведомляем общий чат
+            await NotifyMainChatAsync(
+                $"😔 **Группа {group.Name}**: не найдено подходящего времени\n" +
+                $"Игрокам будет отправлено уведомление с рекомендациями.",
+                ct: ct);
+
+            // 🔹 Уведомляем игроков группы
+            await NotifyAllInGroupAsync(
+                group,
+                $"⚠️ **Не найдено общего времени**\n" +
+                $"К сожалению, не удалось подобрать время, когда все свободны.\n" +
+                $"Мастер получит рекомендации по оптимизации расписания.",
+                ct: ct);
+
             return;
         }
 
         // 🔹 Выбираем ближайшее окно (сортировка по началу времени)
         var nearestSlot = intersections.OrderBy(i => i.Start).First();
-        
         // Получаем админа для конвертации времени в локальное (для текста)
         var admin = await UserService.GetPlayerAsync(AdminId, ct);
         var localStart = ConvertUtcToLocal(nearestSlot.Start, admin?.TimeZoneOffset ?? 0);
@@ -244,7 +257,7 @@ public class CallbackHandler : BaseHandler
         await Db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "✅ Авто-выбор времени для {GroupName}: {StartTime} UTC", 
+            "✅ Авто-выбор времени для {GroupName}: {StartTime} UTC",
             group.Name, nearestSlot.Start);
 
         // 🔹 Формируем клавиатуру RSVP
@@ -255,13 +268,13 @@ public class CallbackHandler : BaseHandler
             ]
         ]);
 
-        var announcementText = 
-            $"⚔️ **АВТО-НАЗНАЧЕНИЕ СЕССИИ** ⚔️\n\n" +
-            $"🤖 Бот подобрал оптимальное время на основе вашего расписания.\n\n" +
+        var announcementText =
+            $"⚔️ **АВТО-НАЗНАЧЕНИЕ СЕССИИ** ⚔️\n" +
+            $"🤖 Бот подобрал оптимальное время на основе вашего расписания.\n" +
             $"👥 Группа: **{group.Name}**\n" +
             $"📅 Дата: **{localStart:dd.MM (ddd)}**\n" +
             $"🕒 Начало: **{localStart:HH:mm}** (по МСК)\n" +
-            $"⏳ Длительность: **{(nearestSlot.End - nearestSlot.Start).TotalHours} ч.**\n\n" +
+            $"⏳ Длительность: **{(nearestSlot.End - nearestSlot.Start).TotalHours} ч.**\n" +
             $"❗ Пожалуйста, подтвердите явку кнопками ниже!\n" +
             $"🎯 Для подтверждения сессии требуется **75%** игроков.";
 
@@ -275,7 +288,6 @@ public class CallbackHandler : BaseHandler
                     text: announcementText,
                     replyMarkup: rsvpKeyboard,
                     ct: ct);
-        
                 _logger.LogDebug("RSVP отправлен игроку {PlayerId}", player.TelegramId);
             }
             catch (Exception ex)
@@ -287,16 +299,16 @@ public class CallbackHandler : BaseHandler
         // 🔹 Уведомление админу об успешном авто-выборе
         await SendTextAsync(
             AdminId,
-            $"🤖 **Авто-планирование завершено**\n\n" +
+            $"🤖 **Авто-планирование завершено**\n" +
             $"✅ Выбрано ближайшее окно: **{localStart:dd.MM HH:mm}**\n" +
-            $"👥 Игроков в группе: **{group.Players.Count(p => p.TelegramId != AdminId)}**\n\n" +
+            $"👥 Игроков в группе: **{group.Players.Count(p => p.TelegramId != AdminId)}**\n" +
             $"Игрокам отправлены запросы на подтверждение. " +
             $"Как только 75% подтвердят — сессия будет финализирована.",
             ct: ct);
 
         // 🔹 Уведомление в чат группы
         await NotifyMainChatAsync(
-            $"🎯 **Время игры назначено!**\n\n" +
+            $"🎯 **Время игры назначено!**\n" +
             $"Бот автоматически подобрал ближайшее окно: **{localStart:dd.MM HH:mm}**\n" +
             $"Игроки, проверьте ЛС от бота и подтвердите участие! ⚔️",
             ct: ct);
@@ -380,42 +392,36 @@ public class CallbackHandler : BaseHandler
     {
         var prefix = isComing ? CallbackPrefixes.RsvpYes : CallbackPrefixes.RsvpNo;
         var groupIdString = callbackQuery.Data!.Replace(prefix, string.Empty);
-
         if (!int.TryParse(groupIdString, out var groupId))
         {
             _logger.LogWarning("Неверный ID группы в RSVP callback: {Data}", callbackQuery.Data);
             return;
         }
-
         var group = await Db.Groups
             .Include(g => g.Players)
             .FirstOrDefaultAsync(g => g.Id == groupId, ct);
-        
         var player = await Db.Players.FindAsync([userId], ct);
-
         if (group == null || player == null)
         {
             await AnswerCallbackAsync(callbackQuery, "⚠️ Ошибка: данные не найдены", showAlert: true, ct);
             return;
         }
-
         if (group.SessionStatus != SessionStatus.Pending)
         {
             await AnswerCallbackAsync(callbackQuery, "ℹ️ Статус сессии уже определён", showAlert: true, ct);
             return;
         }
-
         // Обновление списков
         if (isComing)
         {
-            if (!group.ConfirmedPlayerIds.Contains(userId)) 
+            if (!group.ConfirmedPlayerIds.Contains(userId))
                 group.ConfirmedPlayerIds.Add(userId);
             group.DeclinedPlayerIds.Remove(userId);
         }
         else
         {
             group.ConfirmedPlayerIds.Remove(userId);
-            if (!group.DeclinedPlayerIds.Contains(userId)) 
+            if (!group.DeclinedPlayerIds.Contains(userId))
                 group.DeclinedPlayerIds.Add(userId);
         }
         await Db.SaveChangesAsync(ct);
@@ -425,13 +431,13 @@ public class CallbackHandler : BaseHandler
         var totalPlayers = allPlayers.Count;
         var confirmedCount = group.ConfirmedPlayerIds.Count;
         var respondedCount = group.ConfirmedPlayerIds.Count + group.DeclinedPlayerIds.Count;
-        
-        var participationRate = totalPlayers > 0 
-            ? (double)confirmedCount / totalPlayers 
+        var participationRate = totalPlayers > 0
+            ? (double)confirmedCount / totalPlayers
             : 0;
 
+        // 🔹 ИСПРАВЛЕНО: используем позиционные параметры, чтобы {2} (totalPlayers) использовался дважды
         _logger.LogInformation(
-            "RSVP Группа {GroupId}: Подтвердили {Confirmed}/{Total} ({Rate:P1}). Ответили {Responded}/{Total}",
+            "RSVP Группа {0}: Подтвердили {1}/{2} ({3:P1}). Ответили {4}/{2}",
             groupId, confirmedCount, totalPlayers, participationRate, respondedCount);
 
         // Обновление UI
@@ -626,7 +632,7 @@ public class CallbackHandler : BaseHandler
         // Проверяем права администратора
         if (!IsAdmin(userId))
         {
-            await AnswerCallbackAsync(callbackQuery, "🔒 Только Мастер может запрашивать свободное время", showAlert: true, ct);
+            await AnswerCallbackAsync(callbackQuery, "🔒 Только Мастер может запрашивать свободное время", true, ct);
             return;
         }
 
@@ -635,7 +641,7 @@ public class CallbackHandler : BaseHandler
         if (!int.TryParse(groupIdString, out var groupId))
         {
             _logger.LogWarning("Неверный формат ID группы в запросе свободного времени: {Data}", callbackQuery.Data);
-            await AnswerCallbackAsync(callbackQuery, "⚠️ Ошибка обработки запроса", showAlert: true, ct);
+            await AnswerCallbackAsync(callbackQuery, "⚠️ Ошибка обработки запроса", true, ct);
             return;
         }
 
@@ -643,19 +649,34 @@ public class CallbackHandler : BaseHandler
         var group = await Db.Groups
             .Include(g => g.Players)
             .FirstOrDefaultAsync(g => g.Id == groupId, ct);
-        
         if (group is null)
         {
-            await AnswerCallbackAsync(callbackQuery, "⚠️ Группа не найдена", showAlert: true, ct);
+            await AnswerCallbackAsync(callbackQuery, "⚠️ Группа не найдена", true, ct);
             return;
         }
 
         _logger.LogInformation(
             "Мастер {AdminId} инициировал запрос свободного времени для группы {GroupName} ({GroupId})",
-            userId, group.Name, groupId);
+            userId,
+            group.Name,
+            groupId);
+
+        // 🔹 СБРОС ДАННЫХ ПРЕДЫДУЩЕГО ГОЛОСОВАНИЯ
+        group.CurrentSessionUtc = null;
+        group.FinishedVotingPlayerIds.Clear();
+        group.ConfirmedPlayerIds.Clear();
+        group.DeclinedPlayerIds.Clear();
+        group.SessionStatus = SessionStatus.Pending;
+        await Db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Группа {GroupName}: сброшены данные голосования (SessionUtc={SessionUtc}, FinishedVoting={FinishedCount})",
+            group.Name,
+            group.CurrentSessionUtc,
+            group.FinishedVotingPlayerIds.Count);
 
         // Формируем сообщение для игроков
-        var requestMessage = 
+        var requestMessage =
             $"🎲 **Запрос свободного времени**\n\n" +
             $"Мастер запрашивает ваше расписание для планирования следующей сессии группы **{group.Name}**.\n\n" +
             $"👉 Пожалуйста, укажите когда вы свободны, используя команду /free\n\n" +
@@ -663,45 +684,31 @@ public class CallbackHandler : BaseHandler
             $"1. Нажмите /free или введите эту команду в чат с ботом\n" +
             $"2. Выберите удобные даты в календаре\n" +
             $"3. Отметьте часы, когда вы доступны для игры\n" +
-            $"4. Подтвердите выбор кнопкой «Готово»\n\n" +
+            $"4. Подтвердите выбор кнопкой «✅ ЗАВЕРШИТЬ ЗАПОЛНЕНИЕ»\n\n" +
             $"⏰ Чем быстрее вы заполните расписание, тем скорее Мастер сможет назначить игру!";
 
-        // Отправляем уведомления всем игрокам группы
-        var notifiedCount = 0;
-        foreach (var player in group.Players)
-        {
-            try
-            {
-                await NotifyAllInGroupAsync(group, requestMessage, ct);
-                notifiedCount++;
-                _logger.LogDebug("Запрос свободного времени отправлен игроку {PlayerId}", player.TelegramId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "Не удалось отправить запрос игроку {PlayerId} группы {GroupId}",
-                    player.TelegramId, groupId);
-            }
-        }
+        // 🔹 ОТПРАВЛЯЕМ СООБЩЕНИЕ В ЧАТ ГРУППЫ (ОДНО СООБЩЕНИЕ ДЛЯ ВСЕХ)
+        await NotifyAllInGroupAsync(group, requestMessage, ct: ct);
+        _logger.LogInformation("Запрос свободного времени отправлен в чат группы {GroupName}", group.Name);
 
         // Уведомляем админа о результате
         await EditTextAsync(
             callbackQuery,
             $"✅ Запрос отправлен!\n\n" +
-            $"📬 Уведомлено игроков: **{notifiedCount}/{group.Players.Count}**\n" +
+            $"📬 Уведомление отправлено в чат группы\n" +
             $"👥 Группа: **{group.Name}**\n\n" +
-            $"Как только игроки заполнят расписание, запустите поиск окон кнопкой «🔍 Найти окна».",
+            $"🔄 Данные предыдущего голосования сброшены.\n" +
+            $"Как только все игроки нажмут «Завершить заполнение», запустится авто-планирование.",
             ct: ct);
 
         // Отправляем уведомление в основной чат (если настроен)
         await NotifyMainChatAsync(
             $"🔔 Мастер запросил свободное время для группы **{group.Name}**. " +
-            $"Игроки, проверьте сообщения от бота!",
-            ct: ct);
+            $"Игроки, проверьте чат группы и заполните расписание!",
+            ct);
 
-        await AnswerCallbackAsync(callbackQuery, 
-            $"Запрос отправлен {notifiedCount} игрокам", 
+        await AnswerCallbackAsync(callbackQuery,
+            $"Запрос отправлен в чат группы {group.Name}",
             ct: ct);
     }
 
@@ -758,7 +765,7 @@ public class CallbackHandler : BaseHandler
             replyMarkup: new InlineKeyboardMarkup(buttons),
             ct: ct);
     }
-
+    
     /// <summary>
     /// Обрабатывает завершение голосования по расписанию.
     /// </summary>
@@ -767,43 +774,125 @@ public class CallbackHandler : BaseHandler
         var player = await Db.Players
             .Include(p => p.Groups)
             .FirstOrDefaultAsync(p => p.TelegramId == userId, ct);
-
         if (player is null)
         {
             await AnswerCallbackAsync(callbackQuery, ct: ct);
             return;
         }
 
-        await EditTextAsync(callbackQuery, "✅ Данные сохранены!", ct: ct);
-        await NotifyMainChatAsync(
-            $"🔔 **@{player.GetMarkdownUsername()}** завершил заполнение расписания!", ct);
+        _logger.LogDebug("Игрок {UserId} нажал Завершить. Групп в списке: {Count}",
+            userId, player.Groups.Count);
 
-        // 🔹 ПРОВЕРКА АВТО-ПЛАНИРОВАНИЯ
+        // 🔹 Добавляем игрока в список завершивших голосование
+        var groupsToUpdate = new List<Group>();
         foreach (var groupRef in player.Groups.ToList())
         {
             // ВАЖНО: Перезагружаем группу со всеми игроками из БД
             var group = await Db.Groups
-                .Include(g => g.Players) // <-- Без этого список игроков будет пустым или старым
+                .Include(g => g.Players)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(g => g.Id == groupRef.Id, ct);
-        
-            if (group == null) continue;
-
-            // Проверка: сессия ещё не назначена вручную
-            if (group.CurrentSessionUtc != null) 
+            if (group == null)
             {
-                _logger.LogDebug("Группа {GroupName} уже имеет назначенную сессию, пропускаем авто-план", group.Name);
+                _logger.LogWarning("Группа {GroupId} не найдена в БД", groupRef.Id);
                 continue;
             }
 
-            if (await AreAllPlayersReadyAsync(group, ct))
+            // 🔹 Явно загружаем примитивную коллекцию, если она пуста
+            if (group.FinishedVotingPlayerIds == null)
             {
-                _logger.LogInformation("Запуск авто-планирования для {GroupName}", group.Name);
-                await AutoRunPlanningForGroupAsync(group, ct);
+                group.FinishedVotingPlayerIds = await Db.Groups
+                    .Where(g => g.Id == group.Id)
+                    .Select(g => g.FinishedVotingPlayerIds)
+                    .FirstOrDefaultAsync(ct) ?? new List<long>();
+            }
+
+            _logger.LogDebug("Группа {GroupName}: FinishedVotingPlayerIds.Count = {FinishedCount}, Players.Count = {PlayersCount}, CurrentSessionUtc = {SessionTime}",
+                group.Name, group.FinishedVotingPlayerIds.Count, group.Players.Count, group.CurrentSessionUtc);
+
+            // 🔹 Добавляем игрока в список завершивших голосование (если ещё не добавил)
+            if (!group.FinishedVotingPlayerIds.Contains(userId))
+            {
+                group.FinishedVotingPlayerIds.Add(userId);
+                groupsToUpdate.Add(group);
+                _logger.LogDebug("Игрок {UserId} добавил себя в finished voting для группы {GroupName}", userId, group.Name);
             }
             else
             {
-                // Опционально: можно уведомлять админа о прогрессе
-                // await NotifyAdminProgressAsync(group, ct); 
+                _logger.LogDebug("Игрок {UserId} уже завершил голосование для группы {GroupName}", userId, group.Name);
+            }
+        }
+
+        if (groupsToUpdate.Count > 0)
+        {
+            await Db.SaveChangesAsync(ct);
+            _logger.LogInformation("Сохранено {Count} групп с обновлённым статусом голосования", groupsToUpdate.Count);
+        }
+        else
+        {
+            _logger.LogWarning("Нет групп для обновления (игрок уже завершил во всех группах)");
+        }
+
+        await EditTextAsync(callbackQuery, "✅ Данные сохранены!", ct: ct);
+        await NotifyMainChatAsync(
+            $"🔔 **@{player.GetMarkdownUsername()}** завершил заполнение расписания!",
+            ct);
+
+        // 🔹 ПРОВЕРКА АВТО-ПЛАНИРОВАНИЯ ИЛИ ПЕРЕПЛАНИРОВАНИЯ
+        // ВАЖНО: Перезагружаем группы из БД после SaveChanges для актуальных данных
+        foreach (var groupRef in groupsToUpdate)
+        {
+            var freshGroup = await Db.Groups
+                .Include(g => g.Players)
+                .AsSplitQuery()
+                .FirstOrDefaultAsync(g => g.Id == groupRef.Id, ct);
+            if (freshGroup == null)
+            {
+                _logger.LogWarning("Группа {GroupId} не найдена после SaveChanges", groupRef.Id);
+                continue;
+            }
+
+            // 🔹 Явно загружаем примитивную коллекцию для freshGroup
+            if (freshGroup.FinishedVotingPlayerIds == null || freshGroup.FinishedVotingPlayerIds.Count == 0)
+            {
+                freshGroup.FinishedVotingPlayerIds = await Db.Groups
+                    .Where(g => g.Id == freshGroup.Id)
+                    .Select(g => g.FinishedVotingPlayerIds)
+                    .FirstOrDefaultAsync(ct) ?? new List<long>();
+            }
+
+            _logger.LogDebug("ПРОВЕРКА: Группа {GroupName} — FinishedVotingPlayerIds.Count = {FinishedCount}, Players.Count = {PlayersCount}",
+                freshGroup.Name, freshGroup.FinishedVotingPlayerIds.Count, freshGroup.Players.Count);
+
+            if (await AreAllPlayersFinishedVotingAsync(freshGroup, ct))
+            {
+                _logger.LogInformation("Все игроки ({Count}) завершили голосование для {GroupName}",
+                    freshGroup.Players.Count,
+                    freshGroup.Name);
+
+                // 🔹 ЛОГИКА: Если сессия уже есть — проверяем доступность
+                if (freshGroup.CurrentSessionUtc != null)
+                {
+                    _logger.LogInformation("Группа {GroupName} имеет назначенную сессию на {SessionTime}. Запуск проверки доступности...",
+                        freshGroup.Name, freshGroup.CurrentSessionUtc);
+                    await CheckSessionAvailabilityAsync(freshGroup, ct);
+                }
+                else
+                {
+                    // 🔹 ЛОГИКА: Если сессии нет — запускаем авто-планирование
+                    _logger.LogInformation("Группа {GroupName} не имеет сессии. Запуск авто-планирования...",
+                        freshGroup.Name);
+                    await AutoRunPlanningForGroupAsync(freshGroup, ct);
+                }
+            }
+            else
+            {
+                var finishedCount = freshGroup.FinishedVotingPlayerIds.Count;
+                var totalCount = freshGroup.Players.Count;
+                _logger.LogInformation("⏳ Ожидаем завершения голосования: {Finished}/{Total} для группы {GroupName}",
+                    finishedCount,
+                    totalCount,
+                    freshGroup.Name);
             }
         }
 
@@ -1036,6 +1125,148 @@ public class CallbackHandler : BaseHandler
             string.Join(", ", players.Select(p => p.TelegramId)));
 
         return players;
+    }
+    
+    /// <summary>
+    /// Проверяет, завершили ли все игроки группы голосование.
+    /// </summary>
+    /// <param name="group">Группа для проверки.</param>
+    /// <param name="ct">Токен отмены.</param>
+    /// <returns>True, если все игроки завершили голосование; иначе False.</returns>
+    private async Task<bool> AreAllPlayersFinishedVotingAsync(Group group, CancellationToken ct)
+    {
+        if (group?.Players == null || group.Players.Count == 0)
+        {
+            _logger.LogWarning("Группа {GroupId} не имеет игроков для проверки голосования", group?.Id);
+            return false;
+        }
+        
+        _logger.LogDebug("DEBUG: FinishedVotingPlayerIds.Count = {Count}, Players.Count = {PlayersCount}",
+            group.FinishedVotingPlayerIds?.Count ?? 0,
+            group.Players?.Count ?? 0);
+        
+        // Создаём HashSet для быстрого поиска завершивших голосование
+        var finishedVotingIds = group.FinishedVotingPlayerIds?.ToHashSet() ?? new HashSet<long>();
+        
+        // Проверяем каждого игрока группы: есть ли его TelegramId в списке завершивших
+        foreach (var player in group.Players)
+        {
+            if (player?.TelegramId == null)
+            {
+                _logger.LogWarning("Игрок в группе {GroupName} имеет пустой TelegramId", group.Name);
+                continue;
+            }
+            
+            if (!finishedVotingIds.Contains(player.TelegramId))
+            {
+                _logger.LogDebug(
+                    "Игрок {TelegramId} ещё не завершил голосование в группе {GroupName}",
+                    player.TelegramId,
+                    group.Name);
+                return false;
+            }
+        }
+        
+        _logger.LogDebug(
+            "Все {Count} игроков завершили голосование в группе {GroupName}",
+            group.Players.Count,
+            group.Name);
+        return true;
+    }
+    
+    /// <summary>
+    /// Проверяет, могут ли игроки присутствовать на уже назначенной сессии.
+    /// Если меньше 75% могут — запускает повторное авто-планирование.
+    /// </summary>
+    private async Task CheckSessionAvailabilityAsync(Group group, CancellationToken ct)
+    {
+        if (group.CurrentSessionUtc == null)
+        {
+            _logger.LogDebug("Группа {GroupName} не имеет назначенной сессии", group.Name);
+            return;
+        }
+
+        _logger.LogInformation("Проверка доступности для сессии {GroupName} на {SessionTime}",
+            group.Name, group.CurrentSessionUtc);
+
+        var sessionStart = group.CurrentSessionUtc.Value;
+        var sessionEnd = sessionStart.AddHours(3); // Предполагаем 3-часовую сессию
+
+        // 🔹 Подсчитываем, кто может присутствовать
+        var canAttendCount = 0;
+        var totalPlayers = group.Players.Count;
+
+        foreach (var player in group.Players)
+        {
+            var playerSlots = await Db.Slots
+                .Where(s => s.PlayerId == player.TelegramId)
+                .ToListAsync(ct);
+
+            var canAttend = playerSlots.Any(s =>
+                s.DateTimeUtc <= sessionStart &&
+                s.DateTimeUtc.AddHours(1) > sessionStart);
+
+            if (canAttend)
+            {
+                canAttendCount++;
+                _logger.LogDebug("Игрок {PlayerId} может присутствовать на сессии", player.TelegramId);
+            }
+            else
+            {
+                _logger.LogDebug("Игрок {PlayerId} НЕ может присутствовать на сессии", player.TelegramId);
+            }
+        }
+
+        var attendanceRate = totalPlayers > 0 ? (double)canAttendCount / totalPlayers : 0;
+        const double Threshold = 0.75;
+
+        _logger.LogInformation("Сессия {GroupName}: могут присутствовать {CanAttend}/{Total} ({Rate:P1})",
+            group.Name, canAttendCount, totalPlayers, attendanceRate);
+
+        if (attendanceRate >= Threshold)
+        {
+            // 🔹 75%+ могут — уведомляем, что сессия остаётся в силе
+            var admin = await UserService.GetPlayerAsync(AdminId, ct);
+            var localStart = ConvertUtcToLocal(sessionStart, admin?.TimeZoneOffset ?? 0);
+
+            await NotifyMainChatAsync(
+                $"📅 **Сессия остаётся в силе!**\n" +
+                $"👥 Группа: **{group.Name}**\n" +
+                $"📅 Дата: **{localStart:dd.MM (ddd) HH:mm}** (МСК)\n" +
+                $"✅ Могут присутствовать: {canAttendCount}/{totalPlayers} ({attendanceRate:P0})\n" +
+                $"🎯 Требуется: {Threshold:P0}\n" +
+                $"Время игры не изменилось!",
+                ct);
+
+            _logger.LogInformation("✅ Сессия {GroupName} подтверждена ({Rate:P1})", group.Name, attendanceRate);
+        }
+        else
+        {
+            // 🔹 Меньше 75% — запускаем повторное авто-планирование
+            var admin = await UserService.GetPlayerAsync(AdminId, ct);
+            var localStart = ConvertUtcToLocal(sessionStart, admin?.TimeZoneOffset ?? 0);
+
+            await NotifyMainChatAsync(
+                $"⚠️ **Требуется новое планирование!**\n" +
+                $"👥 Группа: **{group.Name}**\n" +
+                $"❌ Могут присутствовать: {canAttendCount}/{totalPlayers} ({attendanceRate:P0})\n" +
+                $"🎯 Требуется: {Threshold:P0}\n" +
+                $"Запускаю поиск нового времени...",
+                ct);
+
+            _logger.LogInformation("⚠️ Сессия {GroupName} отменена ({Rate:P1}). Запуск авто-планирования...",
+                group.Name, attendanceRate);
+
+            // Сбрасываем текущую сессию
+            group.CurrentSessionUtc = null;
+            group.SessionStatus = SessionStatus.Pending;
+            group.ConfirmedPlayerIds.Clear();
+            group.DeclinedPlayerIds.Clear();
+            await Db.SaveChangesAsync(ct);
+
+            // Запускаем авто-планирование заново
+            await AutoRunPlanningForGroupAsync(group, ct);
+        }
     }
 
     #endregion
