@@ -12,22 +12,25 @@ public class RecommendationResult
     /// <summary>
     /// Флаг, указывающий были ли найдены какие-либо варианты рекомендаций
     /// </summary>
-    public bool HasRecommendations { get; set; }
+    public bool HasRecommendations { get; private set; }
 
     /// <summary>
     /// Список вариантов рекомендаций, отсортированный по приоритету (от лучшего к худшему)
     /// </summary>
-    public List<RecommendationOption> Options { get; set; } = new List<RecommendationOption>();
+    public List<RecommendationOption> Options { get; private set; } = [];
 
     /// <summary>
     /// Количество найденных вариантов
     /// </summary>
-    public int OptionsCount => Options.Count;
+    public int OptionsCount
+    {
+        get => Options.Count;
+    }
 
     /// <summary>
     /// Возвращает лучший вариант рекомендации (с наивысшим приоритетом)
     /// </summary>
-    public RecommendationOption GetBestOption()
+    public RecommendationOption? GetBestOption()
     {
         return Options.FirstOrDefault();
     }

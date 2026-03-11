@@ -2,7 +2,7 @@ namespace TgDataPlanner.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using TgDataPlanner.Common;
+using Common;
 
 /// <summary>
 /// Сервис рекомендаций для планирования игровых сессий.
@@ -25,21 +25,20 @@ public class RecommendationService : IRecommendationService
     /// Находит варианты планирования сессии на основе доступности игроков.
     /// Возвращает окна с максимальным количеством игроков.
     /// </summary>
-    public RecommendationResult FindRecommendations(
+    private RecommendationResult FindRecommendations(
         IEnumerable<PlayerAvailability> players,
-        double sessionDurationHours,
-        double searchWindowHours = 168,
-        int timeStepMinutes = 60)
+        double searchWindowHours,
+        int timeStepMinutes)
     {
         var result = new RecommendationResult();
         var playersList = players.ToList();
-
         if (playersList.Count == 0)
         {
             return result;
         }
 
-        var searchStartTime = DateTime.UtcNow;
+        // Нормализуем время начала поиска до начала текущего часа
+        var searchStartTime = NormalizeToHourStart(DateTime.UtcNow);
         var searchEndTime = searchStartTime.AddHours(searchWindowHours);
         var timeStep = TimeSpan.FromMinutes(timeStepMinutes);
 
@@ -73,7 +72,7 @@ public class RecommendationService : IRecommendationService
         IEnumerable<PlayerAvailability> players,
         double sessionDurationHours)
     {
-        return FindRecommendations(players, sessionDurationHours, searchWindowHours: 168, timeStepMinutes: 60);
+        return FindRecommendations(players, searchWindowHours: 168, timeStepMinutes: 60);
     }
 
     /// <summary>
@@ -85,7 +84,8 @@ public class RecommendationService : IRecommendationService
         DateTime proposedEnd,
         double maxShiftHours)
     {
-        var isAvailable = CanCoverTimeRange(player.AvailableSlots, proposedStart, proposedEnd);
+        var coverage = CalculateCoverage(player.AvailableSlots, proposedStart, proposedEnd);
+        var isAvailable = coverage.HoursCovered >= (proposedEnd - proposedStart).TotalHours * 0.5;
         return (isAvailable, 0);
     }
 
@@ -120,21 +120,29 @@ public class RecommendationService : IRecommendationService
         for (var currentTime = searchStartTime; currentTime < searchEndTime; currentTime += timeStep)
         {
             var proposedEnd = currentTime + sessionDuration;
-            var option = EvaluateTimeSlot(players, currentTime, proposedEnd, durationHours);
-
-            if (option != null && option.AttendingPlayersCount > 0)
+            var option = EvaluateTimeSlot(players, currentTime, proposedEnd);
+            // Добавляем варианты где хотя бы 1 игрок может присутствовать частично
+            if (option.AttendingPlayersCount > 0 || option.PartialAttendPlayersCount > 0)
             {
                 allOptions.Add(option);
             }
         }
 
-        // Находим максимальное количество игроков
-        var maxPlayers = allOptions.Any() ? allOptions.Max(o => o.AttendingPlayersCount) : 0;
+        if (allOptions.Count == 0)
+        {
+            return allOptions;
+        }
 
-        // Оставляем только окна с максимальным количеством игроков
+        // Сортируем по приоритету:
+        // 1. Максимальное количество игроков с полным покрытием
+        // 2. Максимальное количество игроков с частичным покрытием
+        // 3. Максимальное количество часов покрытия
+        // 4. Минимальное время начала
         var bestOptions = allOptions
-            .Where(o => o.AttendingPlayersCount == maxPlayers)
-            .OrderBy(o => o.ProposedStartTime)
+            .OrderByDescending(o => o.AttendingPlayersCount)
+            .ThenByDescending(o => o.PartialAttendPlayersCount)
+            .ThenByDescending(o => o.TotalCoverageHours)
+            .ThenBy(o => o.ProposedStartTime)
             .Take(5)
             .ToList();
 
@@ -143,38 +151,41 @@ public class RecommendationService : IRecommendationService
 
     /// <summary>
     /// Проверяет, могут ли доступные слоты игрока покрыть предложенный временной диапазон.
-    /// Учитывает несколько смежных слотов (например, 3 слота по 1 часу для 3-часовой сессии).
+    /// Возвращает информацию о покрытии (полное/частичное).
     /// </summary>
-    private bool CanCoverTimeRange(List<TimeSlot> availableSlots, DateTime rangeStart, DateTime rangeEnd)
+    private static CoverageResult CalculateCoverage(List<TimeSlot> availableSlots, DateTime rangeStart, DateTime rangeEnd)
     {
         if (availableSlots.Count == 0)
         {
-            return false;
+            return new CoverageResult { HoursCovered = 0, IsFullCoverage = false };
         }
+
+        // Нормализуем диапазон к началу часа
+        rangeStart = NormalizeToHourStart(rangeStart);
+        rangeEnd = NormalizeToHourStart(rangeEnd);
 
         // Сортируем слоты по времени
-        var sortedSlots = availableSlots.OrderBy(s => s.Start).ToList();
+        var sortedSlots = availableSlots
+            .OrderBy(s => s.Start)
+            .Select(s => new TimeSlot
+            {
+                Start = NormalizeToHourStart(s.Start),
+                End = NormalizeToHourStart(s.End)
+            })
+            .ToList();
 
-        // Ищем непрерывную последовательность слотов, покрывающую диапазон
-        var coveredStart = rangeStart;
-        var coveredEnd = rangeStart;
+        var totalHoursNeeded = (rangeEnd - rangeStart).TotalHours;
 
-        foreach (var slot in sortedSlots)
+        var hoursCovered = (from slot in sortedSlots.Where(slot => slot.End > rangeStart).TakeWhile(slot => slot.Start < rangeEnd) let intersectionStart = slot.Start > rangeStart ? slot.Start : rangeStart let intersectionEnd = slot.End < rangeEnd ? slot.End : rangeEnd where intersectionEnd > intersectionStart select (intersectionEnd - intersectionStart).TotalHours).Sum();
+
+        // Учитываем возможные перекрытия слотов (не считаем дважды)
+        hoursCovered = Math.Min(hoursCovered, totalHoursNeeded);
+
+        return new CoverageResult
         {
-            // Если слот начинается там, где мы закончили покрытие (или раньше)
-            if (slot.Start <= coveredEnd && slot.End > coveredEnd)
-            {
-                coveredEnd = slot.End;
-            }
-
-            // Если покрыли весь диапазон
-            if (coveredEnd >= rangeEnd)
-            {
-                return true;
-            }
-        }
-
-        return false;
+            HoursCovered = hoursCovered,
+            IsFullCoverage = hoursCovered >= totalHoursNeeded
+        };
     }
 
     /// <summary>
@@ -183,36 +194,56 @@ public class RecommendationService : IRecommendationService
     private RecommendationOption EvaluateTimeSlot(
         List<PlayerAvailability> players,
         DateTime proposedStart,
-        DateTime proposedEnd,
-        int durationHours)
+        DateTime proposedEnd)
     {
+        // Нормализуем время к началу часа
+        proposedStart = NormalizeToHourStart(proposedStart);
+        proposedEnd = NormalizeToHourStart(proposedEnd);
+
+        var totalDuration = (proposedEnd - proposedStart).TotalHours;
+
         var option = new RecommendationOption
         {
             ProposedStartTime = proposedStart,
             ProposedEndTime = proposedEnd,
             Priority = RecommendationPriority.AllAttendShift1h,
             TotalPlayersCount = players.Count,
-            AttendingPlayersCount = 0
+            AttendingPlayersCount = 0,
+            PartialAttendPlayersCount = 0,
+            TotalCoverageHours = 0
         };
 
         var attendingPlayerIds = new List<long>();
         var attendingPlayerNames = new List<string>();
+        var partialPlayerIds = new List<long>();
+        var totalCoverageHours = 0.0;
 
         foreach (var player in players)
         {
-            var isAvailable = CanCoverTimeRange(player.AvailableSlots, proposedStart, proposedEnd);
+            var coverage = CalculateCoverage(player.AvailableSlots, proposedStart, proposedEnd);
 
-            if (isAvailable)
+            if (coverage.IsFullCoverage)
             {
+                // Игрок может покрыть весь диапазон
                 attendingPlayerIds.Add(player.PlayerId);
                 attendingPlayerNames.Add(player.PlayerName);
+                totalCoverageHours += totalDuration;
+            }
+            else if (coverage.HoursCovered > 0)
+            {
+                // Игрок может покрыть часть диапазона
+                partialPlayerIds.Add(player.PlayerId);
+                totalCoverageHours += coverage.HoursCovered;
             }
         }
 
         option.AttendingPlayersCount = attendingPlayerIds.Count;
+        option.PartialAttendPlayersCount = partialPlayerIds.Count;
+        option.TotalCoverageHours = totalCoverageHours;
         option.ExcludedPlayerIds = players
             .Select(p => p.PlayerId)
             .Except(attendingPlayerIds)
+            .Except(partialPlayerIds)
             .ToList();
 
         // Сохраняем имена присутствующих игроков
@@ -220,4 +251,30 @@ public class RecommendationService : IRecommendationService
 
         return option;
     }
+
+    /// <summary>
+    /// Нормализует дату и время до начала часа (обнуляет минуты, секунды, миллисекунды).
+    /// </summary>
+    /// <param name="dateTime">Исходная дата и время.</param>
+    /// <returns>Дата и время, приведённая к началу часа.</returns>
+    private static DateTime NormalizeToHourStart(DateTime dateTime)
+    {
+        return new DateTime(dateTime.Year, dateTime.Month, dateTime.Day, dateTime.Hour, 0, 0, dateTime.Kind);
+    }
+}
+
+/// <summary>
+/// Результат расчёта покрытия временного диапазона слотами игрока.
+/// </summary>
+public class CoverageResult
+{
+    /// <summary>
+    /// Количество часов, покрытых слотами игрока.
+    /// </summary>
+    public double HoursCovered { get; init; }
+
+    /// <summary>
+    /// Флаг полного покрытия диапазона.
+    /// </summary>
+    public bool IsFullCoverage { get; init; }
 }

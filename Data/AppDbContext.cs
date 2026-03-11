@@ -63,10 +63,8 @@ public class AppDbContext : DbContext
     {
         if (optionsBuilder.IsConfigured)
             return;
-
         var dbPath = GetDatabasePath();
         var connectionString = string.Format(Config.ConnectionStringTemplate, dbPath);
-
         optionsBuilder
             .UseSqlite(connectionString, sqliteOptions =>
             {
@@ -84,7 +82,6 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-
         ConfigurePlayerEntity(modelBuilder);
         ConfigureGroupEntity(modelBuilder);
         ConfigureAvailabilitySlotEntity(modelBuilder);
@@ -99,20 +96,17 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Player>(entity =>
         {
             entity.HasKey(p => p.TelegramId);
-
             entity.HasIndex(p => p.Username)
                 .HasDatabaseName("IX_Players_Username");
-
             entity.Property(p => p.Username)
                 .IsRequired()
                 .HasMaxLength(32)
                 .HasDefaultValue("Unknown");
-
             entity.Property(p => p.CurrentState)
                 .HasMaxLength(50);
         });
     }
-    
+
     /// <summary>
     /// Настраивает сущность <see cref="Group"/>: индексы и ограничения.
     /// </summary>
@@ -121,20 +115,17 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Group>(entity =>
         {
             entity.HasKey(g => g.Id);
-
-            // Стало: индекс для производительности, но без уникальности
+            // Индекс для производительности поиска по чату
             entity.HasIndex(g => g.TelegramChatId)
-                .HasDatabaseName("IX_Groups_ChatId"); // ← убрали .IsUnique()
-
-            entity.HasIndex(g => g.State)
-                .HasDatabaseName("IX_Groups_State");
-
+                .HasDatabaseName("IX_Groups_ChatId");
+            // Индекс для фильтрации по статусу сессии
+            entity.HasIndex(g => g.SessionStatus)
+                .HasDatabaseName("IX_Groups_SessionStatus");
             entity.Property(g => g.Name)
                 .IsRequired(false)
                 .HasMaxLength(100);
-
-            entity.Property(g => g.State)
-                .HasDefaultValue(Common.GroupState.Idle);
+            entity.Property(g => g.SessionStatus)
+                .HasDefaultValue(Common.SessionStatus.NoSession);
         });
     }
 
@@ -146,19 +137,15 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<AvailabilitySlot>(entity =>
         {
             entity.HasKey(s => s.Id);
-
             // Уникальный индекс: один слот на игрока на конкретное время
             entity.HasIndex(s => new { s.PlayerId, s.DateTimeUtc })
                 .HasDatabaseName("IX_Slots_Player_Time")
                 .IsUnique();
-
             entity.HasIndex(s => s.DateTimeUtc)
                 .HasDatabaseName("IX_Slots_DateTime");
-
             entity.Property(s => s.DateTimeUtc)
                 .IsRequired()
                 .HasColumnType("datetime");
-
             entity.Property(s => s.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP");
         });
@@ -193,13 +180,11 @@ public class AppDbContext : DbContext
         var baseDirectory = AppContext.BaseDirectory;
         var relativePath = Path.Combine("Data", "Database", Config.DatabaseFileName);
         var fullPath = Path.Combine(baseDirectory, relativePath);
-
         var directory = Path.GetDirectoryName(fullPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }
-
         return fullPath;
     }
 

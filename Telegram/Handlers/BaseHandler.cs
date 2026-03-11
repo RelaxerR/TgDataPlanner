@@ -9,6 +9,7 @@ using TgDataPlanner.Common;
 using TgDataPlanner.Data;
 using TgDataPlanner.Data.Entities;
 using TgDataPlanner.Services;
+using TgDataPlanner.Configuration;
 
 namespace TgDataPlanner.Telegram.Handlers;
 
@@ -21,12 +22,12 @@ public abstract class BaseHandler
     /// <summary>
     /// Клиент Telegram Bot API.
     /// </summary>
-    protected readonly ITelegramBotClient BotClient;
+    private readonly ITelegramBotClient BotClient;
 
     /// <summary>
     /// Идентификатор основного чата для системных уведомлений.
     /// </summary>
-    protected readonly long MainChatId;
+    private readonly long MainChatId;
 
     /// <summary>
     /// Список идентификаторов администраторов для проверки прав доступа.
@@ -78,12 +79,12 @@ public abstract class BaseHandler
 
         if (!long.TryParse(config["TelegramBot:MainChatId"], out var mainChatId))
         {
-            Logger.LogError("Не удалось распарсить MainChatId из конфигурации. Значение: {Value}", config["MainChatId"]);
+            Logger.LogError(BotConstants.SystemMessages.MainChatIdParseFailed, config["TelegramBot:MainChatId"]);
         }
         MainChatId = mainChatId;
 
         // Парсим список администраторов через запятую
-        AdminIds = new List<long>();
+        AdminIds = [];
         var adminIdsConfig = config["TelegramBot:AdminIds"];
         if (!string.IsNullOrWhiteSpace(adminIdsConfig))
         {
@@ -96,33 +97,90 @@ public abstract class BaseHandler
                 }
                 else
                 {
-                    Logger.LogError("Не удалось распарсить AdminId из конфигурации. Значение: {Value}", adminIdString);
+                    Logger.LogError(BotConstants.SystemMessages.AdminIdParseFailed, adminIdString);
                 }
             }
         }
         else
         {
-            Logger.LogError("AdminIds не настроен в конфигурации");
+            Logger.LogError(BotConstants.SystemMessages.AdminIdsNotConfigured);
         }
     }
 
-    #region Методы отправки сообщений
+    #region Методы отправки сообщений пользователю
 
     /// <summary>
-    /// Отправляет текстовое сообщение в указанный чат.
+    /// Отправляет текстовое сообщение конкретному пользователю по его Telegram ID.
     /// </summary>
-    /// <param name="chatId">Идентификатор чата получателя.</param>
+    /// <param name="telegramId">Идентификатор пользователя Telegram.</param>
     /// <param name="text">Текст сообщения в формате Markdown.</param>
-    /// <param name="replyMarkup">Необязательная разметка клавиатуры.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача, представляющая отправленное сообщение.</returns>
-    protected async Task<Message> SendTextAsync(
-        long chatId,
+    protected async Task<Message> SendToUserAsync(
+        long telegramId,
         string text,
-        ReplyMarkup? replyMarkup = null,
         CancellationToken ct = default)
     {
-        Logger.LogDebug("Отправка сообщения в чат {ChatId}: {TextPreview}", chatId, Truncate(text, 50));
+        return await SendToUserAsync(telegramId, text, null, ct);
+    }
+
+    /// <summary>
+    /// Отправляет текстовое сообщение конкретному пользователю по его Telegram ID с клавиатурой.
+    /// </summary>
+    /// <param name="telegramId">Идентификатор пользователя Telegram.</param>
+    /// <param name="text">Текст сообщения в формате Markdown.</param>
+    /// <param name="replyMarkup">Разметка клавиатуры.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача, представляющая отправленное сообщение.</returns>
+    protected async Task<Message> SendToUserAsync(
+        long telegramId,
+        string text,
+        ReplyMarkup? replyMarkup,
+        CancellationToken ct = default)
+    {
+        Logger.LogDebug(BotConstants.SystemMessages.SendMessageToUser, telegramId, Truncate(text, 50));
+        return await BotClient.SendMessage(
+            chatId: telegramId,
+            text: text,
+            parseMode: ParseMode.Markdown,
+            replyMarkup: replyMarkup,
+            cancellationToken: ct);
+    }
+
+    #endregion
+
+    #region Методы отправки сообщений в чат группы
+
+    /// <summary>
+    /// Отправляет текстовое сообщение в чат группы.
+    /// </summary>
+    /// <param name="chatId">Идентификатор чата группы.</param>
+    /// <param name="text">Текст сообщения в формате Markdown.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача, представляющая отправленное сообщение.</returns>
+    protected async Task<Message> SendToGroupChatAsync(
+        long chatId,
+        string text,
+        CancellationToken ct = default)
+    {
+        return await SendToGroupChatAsync(chatId, text, null, ct);
+    }
+
+    /// <summary>
+    /// Отправляет текстовое сообщение в чат группы с клавиатурой.
+    /// </summary>
+    /// <param name="chatId">Идентификатор чата группы.</param>
+    /// <param name="text">Текст сообщения в формате Markdown.</param>
+    /// <param name="replyMarkup">Разметка клавиатуры.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача, представляющая отправленное сообщение.</returns>
+    protected async Task<Message> SendToGroupChatAsync(
+        long chatId,
+        string text,
+        ReplyMarkup? replyMarkup,
+        CancellationToken ct = default)
+    {
+        Logger.LogDebug(BotConstants.SystemMessages.SendMessageToGroup, chatId, Truncate(text, 50));
         return await BotClient.SendMessage(
             chatId: chatId,
             text: text,
@@ -131,91 +189,242 @@ public abstract class BaseHandler
             cancellationToken: ct);
     }
 
+    #endregion
+
+    #region Методы отправки сообщений всем игрокам в группе
+
     /// <summary>
-    /// Отправляет системное уведомление в основной чат.
+    /// Отправляет уведомление каждому игроку в группе (в личные сообщения).
     /// </summary>
-    /// <param name="text">Текст уведомления.</param>
+    /// <param name="group">Группа, игрокам которой отправляется сообщение.</param>
+    /// <param name="text">Текст уведомления в формате Markdown.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
-    protected async Task NotifyMainChatAsync(string text, CancellationToken ct = default)
+    protected async Task NotifyAllInGroupAsync(
+        Group group,
+        string text,
+        CancellationToken ct = default)
     {
-        if (MainChatId == 0)
+        await NotifyAllInGroupAsync(group, text, null, ct);
+    }
+
+    /// <summary>
+    /// Отправляет уведомление каждому игроку в группе (в личные сообщения) с клавиатурой.
+    /// </summary>
+    /// <param name="group">Группа, игрокам которой отправляется сообщение.</param>
+    /// <param name="text">Текст уведомления в формате Markdown.</param>
+    /// <param name="replyMarkup">Разметка клавиатуры.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    private async Task NotifyAllInGroupAsync(
+        Group group,
+        string text,
+        InlineKeyboardMarkup? replyMarkup,
+        CancellationToken ct = default)
+    {
+        var users = group.Players.Select(p => p.TelegramId).ToList();
+        foreach (var userId in users)
         {
-            Logger.LogWarning("Попытка отправить уведомление в MainChat, но MainChatId не настроен");
-            return;
+            try
+            {
+                await BotClient.SendMessage(
+                    chatId: userId,
+                    text: text,
+                    parseMode: ParseMode.Markdown,
+                    replyMarkup: replyMarkup,
+                    cancellationToken: ct);
+                Logger.LogDebug(BotConstants.SystemMessages.NotifyUser, userId, Truncate(text, 50));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, BotConstants.SystemMessages.NotifyUserFailed, userId);
+            }
         }
-        Logger.LogDebug("Системное уведомление в основной чат: {TextPreview}", Truncate(text, 50));
-        await BotClient.SendMessage(
-            chatId: MainChatId,
-            text: $"🔔 {text}",
+    }
+
+    #endregion
+
+    #region Методы отправки сообщений главному администратору
+
+    /// <summary>
+    /// Отправляет сообщение главному администратору (первому в списке AdminIds).
+    /// </summary>
+    /// <param name="text">Текст сообщения в формате Markdown.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача, представляющая отправленное сообщение.</returns>
+    protected async Task<Message> SendToMainAdminAsync(
+        string text,
+        CancellationToken ct = default)
+    {
+        return await SendToMainAdminAsync(text, null, ct);
+    }
+
+    /// <summary>
+    /// Отправляет сообщение главному администратору (первому в списке AdminIds) с клавиатурой.
+    /// </summary>
+    /// <param name="text">Текст сообщения в формате Markdown.</param>
+    /// <param name="replyMarkup">Разметка клавиатуры.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача, представляющая отправленное сообщение.</returns>
+    private async Task<Message> SendToMainAdminAsync(
+        string text,
+        ReplyMarkup? replyMarkup,
+        CancellationToken ct = default)
+    {
+        var mainAdminId = AdminIds.FirstOrDefault();
+        if (mainAdminId == 0)
+        {
+            Logger.LogWarning(BotConstants.SystemMessages.MainAdminNotConfigured);
+            return null!;
+        }
+
+        Logger.LogDebug(BotConstants.SystemMessages.SendMessageToMainAdmin, mainAdminId, Truncate(text, 50));
+        return await BotClient.SendMessage(
+            chatId: mainAdminId,
+            text: text,
             parseMode: ParseMode.Markdown,
+            replyMarkup: replyMarkup,
             cancellationToken: ct);
     }
 
+    #endregion
+
+    #region Методы отправки сообщений всем администраторам
+
     /// <summary>
-    /// Отправляет уведомление каждому в группе
+    /// Отправляет сообщение всем администраторам (в личные сообщения).
     /// </summary>
-    /// <param name="group">Группа.</param>
-    /// <param name="text">Текст уведомления.</param>
+    /// <param name="text">Текст сообщения в формате Markdown.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
-    protected async Task NotifyAllInGroupAsync(Group group, string text, CancellationToken ct = default)
+    protected async Task NotifyAllAdminsAsync(
+        string text,
+        CancellationToken ct = default)
     {
-        var users = group.Players.Select(p => p.TelegramId).ToList();
-        foreach (var user in users)
-        {
-            await BotClient.SendMessage(
-                chatId: user,
-                text: $"🔔 {text}",
-                parseMode: ParseMode.Markdown,
-                cancellationToken: ct);
-            Logger.LogDebug("Уведомление для [@{user}]: {TextPreview}", user, Truncate(text, 50));
-        }
+        await NotifyAllAdminsAsync(text, null, ct);
     }
 
     /// <summary>
-    /// Отправляет уведомление каждому в группе
+    /// Отправляет сообщение всем администраторам (в личные сообщения) с клавиатурой.
     /// </summary>
-    /// <param name="group">Группа.</param>
-    /// <param name="text">Текст уведомления.</param>
-    /// <param name="replyMarkup">Необязательная новая разметка клавиатуры.</param>
+    /// <param name="text">Текст сообщения в формате Markdown.</param>
+    /// <param name="replyMarkup">Разметка клавиатуры.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
-    protected async Task NotifyAllInGroupAsync(Group group, string text, InlineKeyboardMarkup? replyMarkup = null, CancellationToken ct = default)
+    private async Task NotifyAllAdminsAsync(
+        string text,
+        ReplyMarkup? replyMarkup,
+        CancellationToken ct = default)
     {
-        var users = group.Players.Select(p => p.TelegramId).ToList();
-        foreach (var user in users)
+        if (AdminIds.Count == 0)
         {
-            await BotClient.SendMessage(
-                chatId: user,
-                text: $"🔔 {text}",
-                parseMode: ParseMode.Markdown,
-                replyMarkup: replyMarkup,
-                cancellationToken: ct);
-            Logger.LogDebug("Уведомление для [@{user}]: {TextPreview}", user, Truncate(text, 50));
+            Logger.LogWarning(BotConstants.SystemMessages.MainAdminNotConfigured);
+            return;
+        }
+
+        foreach (var adminId in AdminIds)
+        {
+            try
+            {
+                await BotClient.SendMessage(
+                    chatId: adminId,
+                    text: text,
+                    parseMode: ParseMode.Markdown,
+                    replyMarkup: replyMarkup,
+                    cancellationToken: ct);
+                Logger.LogDebug(BotConstants.SystemMessages.NotifyAdmin, adminId, Truncate(text, 50));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, BotConstants.SystemMessages.NotifyAdminFailed, adminId);
+            }
         }
     }
+
+    #endregion
+
+    #region Методы отправки системных уведомлений в основной чат
+
+    /// <summary>
+    /// Отправляет системное уведомление в основной чат.
+    /// </summary>
+    /// <param name="text">Текст уведомления в формате Markdown.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    protected async Task NotifyMainChatAsync(
+        string text,
+        CancellationToken ct = default)
+    {
+        await NotifyMainChatAsync(text, null, ct);
+    }
+
+    /// <summary>
+    /// Отправляет системное уведомление в основной чат с клавиатурой.
+    /// </summary>
+    /// <param name="text">Текст уведомления в формате Markdown.</param>
+    /// <param name="replyMarkup">Разметка клавиатуры.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    private async Task NotifyMainChatAsync(
+        string text,
+        ReplyMarkup? replyMarkup,
+        CancellationToken ct = default)
+    {
+        if (MainChatId == 0)
+        {
+            Logger.LogWarning(BotConstants.SystemMessages.MainChatNotConfigured);
+            return;
+        }
+
+        Logger.LogDebug(BotConstants.SystemMessages.NotifyMainChat, Truncate(text, 50));
+        await BotClient.SendMessage(
+            chatId: MainChatId,
+            text: text,
+            parseMode: ParseMode.Markdown,
+            replyMarkup: replyMarkup,
+            cancellationToken: ct);
+    }
+
+    #endregion
+
+    #region Методы редактирования сообщений
 
     /// <summary>
     /// Редактирует текст существующего сообщения (используется для кнопок).
     /// </summary>
     /// <param name="query">Запрос обратного вызова, содержащий сообщение.</param>
     /// <param name="text">Новый текст сообщения в формате Markdown.</param>
-    /// <param name="replyMarkup">Необязательная новая разметка клавиатуры.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
     protected async Task EditTextAsync(
         CallbackQuery query,
         string text,
-        InlineKeyboardMarkup? replyMarkup = null,
+        CancellationToken ct = default)
+    {
+        await EditTextAsync(query, text, null, ct);
+    }
+
+    /// <summary>
+    /// Редактирует текст существующего сообщения с новой клавиатурой.
+    /// </summary>
+    /// <param name="query">Запрос обратного вызова, содержащий сообщение.</param>
+    /// <param name="text">Новый текст сообщения в формате Markdown.</param>
+    /// <param name="replyMarkup">Новая разметка клавиатуры.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    private async Task EditTextAsync(
+        CallbackQuery query,
+        string text,
+        InlineKeyboardMarkup? replyMarkup,
         CancellationToken ct = default)
     {
         if (query.Message is null)
         {
-            Logger.LogWarning("Попытка редактировать сообщение, но CallbackQuery.Message равен null");
+            Logger.LogWarning(BotConstants.SystemMessages.EditMessageNull);
             return;
         }
-        Logger.LogDebug("Редактирование сообщения {MessageId} в чате {ChatId}", query.Message.MessageId, query.Message.Chat.Id);
+
+        Logger.LogDebug(BotConstants.SystemMessages.EditMessage, query.Message.MessageId, query.Message.Chat.Id);
         await BotClient.EditMessageText(
             chatId: query.Message.Chat.Id,
             messageId: query.Message.MessageId,
@@ -239,9 +448,10 @@ public abstract class BaseHandler
     {
         if (query.Message is null)
         {
-            Logger.LogWarning("Попытка редактировать клавиатуру, но CallbackQuery.Message равен null");
+            Logger.LogWarning(BotConstants.SystemMessages.EditMarkupNull);
             return;
         }
+
         try
         {
             await BotClient.EditMessageReplyMarkup(
@@ -255,23 +465,40 @@ public abstract class BaseHandler
             // Игнорируем ошибку, если сообщение не изменилось
             if (ex.ErrorCode == 400 && ex.Message.Contains("message is not modified"))
             {
-                return; // Просто выходим, не пишем в лог ошибку
+                return;
             }
-            throw; // Пробрасываем другие ошибки
+            throw;
         }
     }
 
+    #endregion
+
+    #region Методы ответа на CallbackQuery
+
     /// <summary>
     /// Отвечает на CallbackQuery, убирая индикатор загрузки в Telegram.
+    /// </summary>
+    /// <param name="callbackQuery">Запрос обратного вызова.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Задача выполнения операции.</returns>
+    protected async Task AnswerCallbackAsync(
+        CallbackQuery callbackQuery,
+        CancellationToken ct = default)
+    {
+        await AnswerCallbackAsync(callbackQuery, null, false, ct);
+    }
+
+    /// <summary>
+    /// Отвечает на CallbackQuery с сообщением, убирая индикатор загрузки в Telegram.
     /// </summary>
     /// <param name="callbackQuery">Запрос обратного вызова.</param>
     /// <param name="message">Необязательное сообщение для пользователя.</param>
     /// <param name="showAlert">Показывать ли сообщение как всплывающее уведомление.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
-    protected async Task AnswerCallbackAsync(
+    private async Task AnswerCallbackAsync(
         CallbackQuery callbackQuery,
-        string? message = null,
+        string? message,
         bool showAlert = false,
         CancellationToken ct = default)
     {

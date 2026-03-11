@@ -10,56 +10,62 @@ public class RecommendationOption
     /// <summary>
     /// Предлагаемое время начала сессии
     /// </summary>
-    public DateTime ProposedStartTime { get; set; }
+    public DateTime ProposedStartTime { get; init; }
 
     /// <summary>
     /// Предлагаемое время окончания сессии
     /// </summary>
-    public DateTime ProposedEndTime { get; set; }
+    public DateTime ProposedEndTime { get; init; }
 
     /// <summary>
     /// Приоритет данного варианта рекомендации
     /// </summary>
-    public RecommendationPriority Priority { get; set; }
+    public RecommendationPriority Priority { get; init; }
 
     /// <summary>
     /// Список идентификаторов игроков, которые не смогут присутствовать в этом варианте
     /// (пустой список означает, что все игроки участвуют)
     /// </summary>
-    public List<long> ExcludedPlayerIds { get; set; } = new List<long>();
+    public List<long> ExcludedPlayerIds { get; set; } = [];
 
     /// <summary>
     /// Информация о сдвиге времени для каждого игрока относительно его исходных предпочтений.
     /// Ключ: PlayerId, Значение: сдвиг в часах (положительное - позже, отрицательное - раньше)
     /// </summary>
-    public Dictionary<long, double> PlayerTimeShifts { get; set; } = new Dictionary<long, double>();
+    private Dictionary<long, double> PlayerTimeShifts { get; } = new();
 
     /// <summary>
     /// Максимальный сдвиг времени среди всех участвующих игроков в этом варианте
     /// </summary>
-    public double MaxTimeShift => PlayerTimeShifts.Count > 0 ? PlayerTimeShifts.Values.Max() : 0;
+    public double MaxTimeShift
+    {
+        get => PlayerTimeShifts.Count > 0 ? PlayerTimeShifts.Values.Max() : 0;
+    }
 
     /// <summary>
-    /// Количество игроков, которые смогут присутствовать в этом варианте
+    /// Количество игроков, которые смогут присутствовать в этом варианте (полное покрытие)
     /// </summary>
     public int AttendingPlayersCount { get; set; }
 
     /// <summary>
-    /// Общее количество игроков в сессии
+    /// Количество игроков, которые смогут присутствовать частично (частичное покрытие)
     /// </summary>
-    public int TotalPlayersCount { get; set; }
+    public int PartialAttendPlayersCount { get; set; }
 
     /// <summary>
-    /// Процент игроков, которые смогут присутствовать в этом варианте
+    /// Общее количество часов покрытия всеми игроками
     /// </summary>
-    public double AttendancePercentage => TotalPlayersCount > 0
-        ? (double)AttendingPlayersCount / TotalPlayersCount * 100
-        : 0;
+    public double TotalCoverageHours { get; set; }
+
+    /// <summary>
+    /// Общее количество игроков в сессии
+    /// </summary>
+    public int TotalPlayersCount { get; init; }
 
     /// <summary>
     /// Список имён игроков, которые смогут присутствовать в этом варианте
     /// </summary>
-    public List<string> AttendingPlayerNames { get; set; } = new List<string>();
+    public List<string> AttendingPlayerNames { get; set; } = [];
 
     /// <summary>
     /// Возвращает человекочитаемое описание приоритета
@@ -87,24 +93,22 @@ public class RecommendationOption
         {
             return "Без сдвигов";
         }
-
         var shifts = new List<string>();
         foreach (var shift in PlayerTimeShifts)
         {
-            if (shift.Value == 0)
+            switch (shift.Value)
             {
-                shifts.Add($"Игрок {shift.Key}: без сдвига");
-            }
-            else if (shift.Value > 0)
-            {
-                shifts.Add($"Игрок {shift.Key}: +{shift.Value:F1} ч.");
-            }
-            else
-            {
-                shifts.Add($"Игрок {shift.Key}: {shift.Value:F1} ч.");
+                case 0:
+                    shifts.Add($"Игрок {shift.Key}: без сдвига");
+                    break;
+                case > 0:
+                    shifts.Add($"Игрок {shift.Key}: +{shift.Value:F1} ч.");
+                    break;
+                default:
+                    shifts.Add($"Игрок {shift.Key}: {shift.Value:F1} ч.");
+                    break;
             }
         }
-
         return string.Join(", ", shifts);
     }
 
