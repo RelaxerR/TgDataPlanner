@@ -1246,7 +1246,7 @@ public class CallbackHandler : BaseHandler
         group.FinishedVotingPlayerIds.Clear();
         group.ConfirmedPlayerIds.Clear();
         group.DeclinedPlayerIds.Clear();
-        group.SessionStatus = SessionStatus.Pending;
+        group.SessionStatus = SessionStatus.NoSession;
         await Db.SaveChangesAsync(ct);
         _logger.LogInformation(
             BotConstants.CallbackHandlerLogs.VotingDataReset,

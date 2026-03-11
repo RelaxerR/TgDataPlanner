@@ -205,10 +205,10 @@ public class SessionPlanningService
                 Success = true,
                 HasIntersection = false,
                 HasRecommendations = true,
-                RecommendationResult = recommendationResult,
                 BestOption = bestOption,
                 Message = $"Найдена рекомендация: {bestOption.ProposedStartTime:dd.MM HH:mm}"
             };
+
         return null;
     }
 
@@ -218,17 +218,20 @@ public class SessionPlanningService
     private async Task<List<PlayerAvailability>> BuildPlayersAvailabilityAsync(Group group, CancellationToken ct)
     {
         var playersAvailability = new List<PlayerAvailability>();
+
         foreach (var player in group.Players)
         {
             var slots = await _db.Slots
                 .Where(s => s.PlayerId == player.TelegramId)
                 .OrderBy(s => s.DateTimeUtc)
                 .ToListAsync(ct);
+
             var availableSlots = slots.Select(s => new TimeSlot
             {
                 Start = s.DateTimeUtc,
                 End = s.DateTimeUtc.AddHours(1)
             }).ToList();
+
             playersAvailability.Add(new PlayerAvailability
             {
                 PlayerId = player.TelegramId,
@@ -237,9 +240,11 @@ public class SessionPlanningService
                 PreferredStartTime = availableSlots.FirstOrDefault()?.Start,
             });
         }
+
         _logger.LogInformation("Построена доступность для {Count} игроков группы {GroupName}",
             playersAvailability.Count,
             group.Name);
+
         return playersAvailability;
     }
 
@@ -253,6 +258,8 @@ public class SessionPlanningService
         group.ConfirmedPlayerIds.Clear();
         group.DeclinedPlayerIds.Clear();
         group.FinishedVotingPlayerIds.Clear();
+        group.SessionStatus = SessionStatus.NoSession;
+        group.UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -278,7 +285,6 @@ public class AutoPlanningResult
     public bool HasRecommendations { get; init; }
     public string Message { get; init; } = string.Empty;
     public DateTimeRange? SelectedSlot { get; init; }
-    public RecommendationResult? RecommendationResult { get; init; }
     public RecommendationOption? BestOption { get; init; }
 }
 

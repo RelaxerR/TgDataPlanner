@@ -15,34 +15,6 @@ public sealed class Group
     [Key]
     public int Id { get; init; }
 
-    public DateTime? CurrentSessionUtc { get; set; }
-
-    /// <summary>
-    /// Список TelegramId игроков, подтвердивших участие (RSVP Yes).
-    /// </summary>
-    public List<long> ConfirmedPlayerIds { get; set; } = [];
-
-    /// <summary>
-    /// Список TelegramId игроков, отказавшихся от участия (RSVP No).
-    /// </summary>
-    public List<long> DeclinedPlayerIds { get; set; } = [];
-
-    /// <summary>
-    /// Список TelegramId игроков, нажавших кнопку "Завершить заполнение" при сборе расписания.
-    /// Используется для отслеживания готовности группы к авто-планированию.
-    /// </summary>
-    public List<long> FinishedVotingPlayerIds { get; set; } = [];
-
-    /// <summary>
-    /// Список TelegramId администраторов, состоящих в данной группе.
-    /// </summary>
-    public List<long> AdminIds { get; set; } = [];
-
-    /// <summary>
-    /// Статус сессии: Pending (ожидание ответов), Confirmed (подтверждена), Cancelled (отменена), Rescheduled (перепланирована).
-    /// </summary>
-    public SessionStatus SessionStatus { get; set; } = SessionStatus.Pending;
-
     /// <summary>
     /// Отображаемое название группы (например, "Кампания Драконьего Копья").
     /// </summary>
@@ -60,10 +32,41 @@ public sealed class Group
     public long TelegramChatId { get; init; }
 
     /// <summary>
-    /// Текущее состояние группы в жизненном цикле планирования.
-    /// По умолчанию — <see cref="GroupState.Idle"/>.
+    /// Дата и время следующей запланированной сессии в UTC.
+    /// null = сессия не назначена.
     /// </summary>
-    public GroupState State { get; set; } = GroupState.Idle;
+    public DateTime? CurrentSessionUtc { get; set; }
+
+    /// <summary>
+    /// Текущий статус сессии группы.
+    /// </summary>
+    /// <remarks>
+    /// NoSession → Pending → Confirmed/Cancelled/Rescheduled
+    /// </remarks>
+    public SessionStatus SessionStatus { get; set; } = SessionStatus.NoSession;
+
+    /// <summary>
+    /// Список TelegramId игроков, подтвердивших участие (RSVP Yes).
+    /// Сбрасывается при изменении времени сессии.
+    /// </summary>
+    public List<long> ConfirmedPlayerIds { get; init; } = [];
+
+    /// <summary>
+    /// Список TelegramId игроков, отказавшихся от участия (RSVP No).
+    /// Сбрасывается при изменении времени сессии.
+    /// </summary>
+    public List<long> DeclinedPlayerIds { get; init; } = [];
+
+    /// <summary>
+    /// Список TelegramId игроков, нажавших кнопку "Завершить заполнение" при сборе расписания.
+    /// Используется для отслеживания готовности группы к авто-планированию.
+    /// </summary>
+    public List<long> FinishedVotingPlayerIds { get; init; } = [];
+
+    /// <summary>
+    /// Список TelegramId администраторов, состоящих в данной группе.
+    /// </summary>
+    public List<long> AdminIds { get; init; } = [];
 
     /// <summary>
     /// Порядок выбора группы в интерфейсе (для сортировки при переключении).
@@ -75,7 +78,7 @@ public sealed class Group
     /// Дата и время последней проведённой игровой сессии.
     /// Используется для аналитики и рекомендаций по планированию.
     /// </summary>
-    public DateTime? LastGameDate { get; set; }
+    public DateTime? LastGameDate { get; init; }
 
     /// <summary>
     /// Дата и время создания записи группы.
@@ -109,17 +112,46 @@ public sealed class Group
     {
         Name = name ?? throw new ArgumentNullException(nameof(name));
         TelegramChatId = telegramChatId;
+        SessionStatus = SessionStatus.NoSession;
     }
 
     /// <summary>
-    /// Обновляет метаданные группы: состояние, дату последней игры и время обновления.
+    /// Обновляет статус сессии и метаданные группы.
     /// </summary>
-    /// <param name="newState">Новое состояние группы.</param>
-    /// <param name="lastGameDate">Дата последней игры (опционально).</param>
-    public void UpdateMetadata(GroupState newState, DateTime? lastGameDate = null)
+    /// <param name="newStatus">Новый статус сессии.</param>
+    /// <param name="sessionUtc">Время сессии (опционально).</param>
+    public void UpdateSessionStatus(SessionStatus newStatus, DateTime? sessionUtc = null)
     {
-        State = newState;
-        LastGameDate = lastGameDate ?? LastGameDate;
+        SessionStatus = newStatus;
+        CurrentSessionUtc = sessionUtc ?? CurrentSessionUtc;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Проверяет, находится ли группа в состоянии ожидания RSVP.
+    /// </summary>
+    public bool IsAwaitingRSVP() => SessionStatus == SessionStatus.Pending;
+
+    /// <summary>
+    /// Проверяет, подтверждена ли сессия.
+    /// </summary>
+    public bool IsSessionConfirmed() => SessionStatus == SessionStatus.Confirmed;
+
+    /// <summary>
+    /// Проверяет, есть ли у группы назначенная сессия.
+    /// </summary>
+    public bool HasSession() => CurrentSessionUtc.HasValue;
+
+    /// <summary>
+    /// Сбрасывает данные голосования при изменении состава группы или новом запросе.
+    /// </summary>
+    public void ResetVotingData()
+    {
+        FinishedVotingPlayerIds.Clear();
+        ConfirmedPlayerIds.Clear();
+        DeclinedPlayerIds.Clear();
+        CurrentSessionUtc = null;
+        SessionStatus = SessionStatus.NoSession;
         UpdatedAt = DateTime.UtcNow;
     }
 
@@ -128,5 +160,5 @@ public sealed class Group
     /// </summary>
     /// <returns>Строка формата "Group[{Id}]: {Name}"</returns>
     public override string ToString() =>
-        $"Group[{Id}]: '{Name}' (Chat={TelegramChatId}, Players={Players.Count}, State={State})";
+        $"Group[{Id}]: '{Name}' (Chat={TelegramChatId}, Players={Players.Count}, Status={SessionStatus}, Session={CurrentSessionUtc?.ToString("dd.MM HH:mm") ?? "null"})";
 }
