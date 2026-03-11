@@ -2,7 +2,7 @@ namespace TgDataPlanner.Services;
 
 using System;
 using System.Collections.Generic;
-using TgDataPlanner.Common;
+using Common;
 
 /// <summary>
 /// Модель данных о доступности игрока для сервиса рекомендаций.
@@ -12,27 +12,22 @@ public class PlayerAvailability
     /// <summary>
     /// Идентификатор игрока (Telegram ChatId или UserId)
     /// </summary>
-    public long PlayerId { get; set; }
+    public long PlayerId { get; init; }
 
     /// <summary>
     /// Имя игрока для отображения в рекомендациях
     /// </summary>
-    public string PlayerName { get; set; }
+    public required string PlayerName { get; init; }
 
     /// <summary>
     /// Список доступных временных интервалов для игрока
     /// </summary>
-    public List<TimeSlot> AvailableSlots { get; set; } = new List<TimeSlot>();
+    public List<TimeSlot> AvailableSlots { get; init; } = [];
 
     /// <summary>
     /// Оригинальное предпочтительное время начала (если указано игроком)
     /// </summary>
-    public DateTime? PreferredStartTime { get; set; }
-
-    /// <summary>
-    /// Оригинальное предпочтительное время окончания (если указано игроком)
-    /// </summary>
-    public DateTime? PreferredEndTime { get; set; }
+    public DateTime? PreferredStartTime { get; init; }
 }
 
 /// <summary>
@@ -43,12 +38,12 @@ public class TimeSlot
     /// <summary>
     /// Начало доступного интервала
     /// </summary>
-    public DateTime Start { get; set; }
+    public DateTime Start { get; init; }
 
     /// <summary>
     /// Конец доступного интервала
     /// </summary>
-    public DateTime End { get; set; }
+    public DateTime End { get; init; }
 
     /// <summary>
     /// Проверяет, пересекается ли этот слот с указанным временным диапазоном
@@ -69,7 +64,10 @@ public class TimeSlot
     /// <summary>
     /// Возвращает длительность слота в часах
     /// </summary>
-    public double DurationHours => (End - Start).TotalHours;
+    public double DurationHours
+    {
+        get => (End - Start).TotalHours;
+    }
 }
 
 /// <summary>
@@ -78,22 +76,6 @@ public class TimeSlot
 /// </summary>
 public interface IRecommendationService
 {
-    /// <summary>
-    /// Находит варианты планирования сессии на основе доступности игроков.
-    /// Варианты сортируются по приоритету согласно философии:
-    /// "Лучше сдвинуть время всем немного, но чтобы участвовали все".
-    /// </summary>
-    /// <param name="players">Список игроков с их доступностью</param>
-    /// <param name="sessionDurationHours">Требуемая длительность сессии в часах</param>
-    /// <param name="searchWindowHours">Окно поиска вариантов в часах (от текущего времени)</param>
-    /// <param name="timeStepMinutes">Шаг перебора времени в минутах (точность поиска)</param>
-    /// <returns>Результат с отсортированными вариантами рекомендаций</returns>
-    RecommendationResult FindRecommendations(
-        IEnumerable<PlayerAvailability> players,
-        double sessionDurationHours,
-        double searchWindowHours = 168,
-        int timeStepMinutes = 30);
-
     /// <summary>
     /// Находит варианты планирования сессии с базовыми параметрами поиска.
     /// </summary>

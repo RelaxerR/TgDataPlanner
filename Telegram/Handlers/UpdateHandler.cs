@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
@@ -5,7 +6,7 @@ using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using TgDataPlanner.Data;
 using TgDataPlanner.Services;
-using TgDataPlanner.Configuration;
+using static TgDataPlanner.Configuration.BotConstants.SystemMessages;
 
 namespace TgDataPlanner.Telegram.Handlers;
 
@@ -13,6 +14,7 @@ namespace TgDataPlanner.Telegram.Handlers;
 /// Обработчик входящих обновлений Telegram Bot API.
 /// Маршрутизирует обновления к соответствующим обработчикам команд и кнопок.
 /// </summary>
+[SuppressMessage("Usage", "CA2253:Named placeholders should not be numeric values")]
 public class UpdateHandler : BaseHandler
 {
     private readonly CommandHandler _commandHandler;
@@ -68,7 +70,7 @@ public class UpdateHandler : BaseHandler
     {
         if (update is null)
         {
-            _logger.LogWarning(BotConstants.SystemMessages.UpdateReceivedNull);
+            _logger.LogWarning(UpdateReceivedNull);
             return;
         }
 
@@ -89,7 +91,7 @@ public class UpdateHandler : BaseHandler
         {
             _logger.LogError(
                 ex,
-                BotConstants.SystemMessages.UpdateError,
+                UpdateError,
                 update.Type);
         }
     }
@@ -105,8 +107,8 @@ public class UpdateHandler : BaseHandler
             UpdateType.Message when update.Message is not null =>
                 (update.Message.Chat.Id, update.Message.From?.Id),
             UpdateType.CallbackQuery when update.CallbackQuery is not null =>
-                (update.CallbackQuery.Message?.Chat.Id, update.CallbackQuery.From?.Id),
-            _ => (null, null)!
+                (update.CallbackQuery.Message?.Chat.Id, update.CallbackQuery.From.Id),
+            _ => (null, null)
         };
 
     /// <summary>
@@ -114,14 +116,14 @@ public class UpdateHandler : BaseHandler
     /// </summary>
     private void LogUpdateReceived(UpdateType type, (long? ChatId, long? UserId) context) =>
         _logger.LogDebug(
-            BotConstants.SystemMessages.UpdateReceived,
+            UpdateReceived,
             type, context.ChatId, context.UserId);
 
     /// <summary>
     /// Логирует пропуск неподдерживаемого типа обновления.
     /// </summary>
     private void LogUpdateSkipped(UpdateType type) =>
-        _logger.LogDebug(BotConstants.SystemMessages.UpdateSkipped, type);
+        _logger.LogDebug(UpdateSkipped, type);
 
     /// <summary>
     /// Маршрутизирует обновление к соответствующему обработчику.
@@ -170,7 +172,7 @@ public class UpdateHandler : BaseHandler
     private async Task HandleMessageAsync(Message message, CancellationToken ct)
     {
         _logger.LogInformation(
-            BotConstants.SystemMessages.MessageProcessing,
+            MessageProcessing,
             message.From?.Id,
             message.Chat.Id,
             TruncateForLog(message.Text));
@@ -183,8 +185,8 @@ public class UpdateHandler : BaseHandler
     private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
     {
         _logger.LogInformation(
-            BotConstants.SystemMessages.CallbackProcessing,
-            callbackQuery.From?.Id,
+            CallbackProcessing,
+            callbackQuery.From.Id,
             callbackQuery.Data);
         await _callbackHandler.HandleAsync(callbackQuery, ct);
     }

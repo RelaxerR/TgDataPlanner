@@ -2,7 +2,7 @@ namespace TgDataPlanner.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using TgDataPlanner.Common;
+using Common;
 
 /// <summary>
 /// Сервис рекомендаций для планирования игровых сессий.
@@ -25,10 +25,10 @@ public class RecommendationService : IRecommendationService
     /// Находит варианты планирования сессии на основе доступности игроков.
     /// Возвращает окна с максимальным количеством игроков.
     /// </summary>
-    public RecommendationResult FindRecommendations(
+    private RecommendationResult FindRecommendations(
         IEnumerable<PlayerAvailability> players,
         double sessionDurationHours,
-        double searchWindowHours = 168,
+        double searchWindowHours,
         int timeStepMinutes = 60)
     {
         var result = new RecommendationResult();
@@ -120,9 +120,9 @@ public class RecommendationService : IRecommendationService
         for (var currentTime = searchStartTime; currentTime < searchEndTime; currentTime += timeStep)
         {
             var proposedEnd = currentTime + sessionDuration;
-            var option = EvaluateTimeSlot(players, currentTime, proposedEnd, durationHours);
+            var option = EvaluateTimeSlot(players, currentTime, proposedEnd);
 
-            if (option != null && option.AttendingPlayersCount > 0)
+            if (option.AttendingPlayersCount > 0)
             {
                 allOptions.Add(option);
             }
@@ -145,7 +145,7 @@ public class RecommendationService : IRecommendationService
     /// Проверяет, могут ли доступные слоты игрока покрыть предложенный временной диапазон.
     /// Учитывает несколько смежных слотов (например, 3 слота по 1 часу для 3-часовой сессии).
     /// </summary>
-    private bool CanCoverTimeRange(List<TimeSlot> availableSlots, DateTime rangeStart, DateTime rangeEnd)
+    private static bool CanCoverTimeRange(List<TimeSlot> availableSlots, DateTime rangeStart, DateTime rangeEnd)
     {
         if (availableSlots.Count == 0)
         {
@@ -156,7 +156,6 @@ public class RecommendationService : IRecommendationService
         var sortedSlots = availableSlots.OrderBy(s => s.Start).ToList();
 
         // Ищем непрерывную последовательность слотов, покрывающую диапазон
-        var coveredStart = rangeStart;
         var coveredEnd = rangeStart;
 
         foreach (var slot in sortedSlots)
@@ -183,8 +182,7 @@ public class RecommendationService : IRecommendationService
     private RecommendationOption EvaluateTimeSlot(
         List<PlayerAvailability> players,
         DateTime proposedStart,
-        DateTime proposedEnd,
-        int durationHours)
+        DateTime proposedEnd)
     {
         var option = new RecommendationOption
         {

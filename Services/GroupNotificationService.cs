@@ -4,7 +4,6 @@ using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
-using TgDataPlanner.Common;
 using TgDataPlanner.Configuration;
 using TgDataPlanner.Data.Entities;
 
@@ -36,7 +35,7 @@ public class GroupNotificationService
     {
         _botClient = botClient ?? throw new ArgumentNullException(nameof(botClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _adminIds = adminIds ?? new List<long>();
+        _adminIds = adminIds ?? [];
         _mainChatId = mainChatId;
     }
 
@@ -304,7 +303,7 @@ public class GroupNotificationService
     /// Создаёт клавиатуру для RSVP-ответов.
     /// </summary>
     /// <param name="groupId">Идентификатор группы.</param>
-    public InlineKeyboardMarkup CreateRsvpKeyboard(int groupId) => new([
+    public static InlineKeyboardMarkup CreateRsvpKeyboard(int groupId) => new([
         [
             InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonRsvpYes, $"{BotConstants.CallbackPrefixes.RsvpYes}{groupId}"),
             InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonRsvpNo, $"{BotConstants.CallbackPrefixes.RsvpNo}{groupId}")

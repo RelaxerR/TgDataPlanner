@@ -43,7 +43,7 @@ public class SessionPlanningService
     /// <param name="groupId">Идентификатор группы.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Результат авто-планирования.</returns>
-    public async Task<AutoPlanningResult> AutoPlanGroupAsync(int groupId, CancellationToken ct)
+    public async Task<AutoPlanningResult?> AutoPlanGroupAsync(int groupId, CancellationToken ct)
     {
         var group = await LoadFreshGroupAsync(groupId, ct);
         if (group == null)
@@ -78,7 +78,7 @@ public class SessionPlanningService
     /// </summary>
     /// <param name="group">Группа для обновления.</param>
     /// <param name="sessionStartUtc">Время начала сессии в UTC.</param>
-    public void UpdateGroupSessionData(Group group, DateTime sessionStartUtc)
+    public static void UpdateGroupSessionData(Group group, DateTime sessionStartUtc)
     {
         group.CurrentSessionUtc = sessionStartUtc;
         group.ConfirmedPlayerIds.Clear();
@@ -104,7 +104,7 @@ public class SessionPlanningService
 
         var sessionStart = group.CurrentSessionUtc.Value;
         var (canAttendPlayers, cannotAttendPlayers) = await CheckPlayersAvailabilityAsync(group, sessionStart, ct);
-        var adminsCanAttend = await CheckAdminsAvailabilityForSessionAsync(group, canAttendPlayers, ct);
+        var adminsCanAttend = await CheckAdminsAvailabilityForSessionAsync(group, canAttendPlayers);
         var attendanceRate = CalculateAttendanceRate(canAttendPlayers.Count, group.Players.Count);
 
         return new SessionAvailabilityResult
@@ -129,7 +129,6 @@ public class SessionPlanningService
     {
         var canAttend = new List<Player>();
         var cannotAttend = new List<Player>();
-        var sessionEnd = sessionStart.AddHours(BotConstants.DefaultSessionDurationHours);
 
         foreach (var player in group.Players)
         {
@@ -144,16 +143,16 @@ public class SessionPlanningService
     /// <summary>
     /// Проверяет доступность администраторов для сессии.
     /// </summary>
-    private async Task<bool> CheckAdminsAvailabilityForSessionAsync(Group group, List<Player> canAttendPlayers, CancellationToken ct)
+    private static Task<bool> CheckAdminsAvailabilityForSessionAsync(Group group, List<Player> canAttendPlayers)
     {
         var adminsInGroup = group.Players.Where(p => group.AdminIds.Contains(p.TelegramId)).ToList();
-        return adminsInGroup.All(admin => canAttendPlayers.Contains(admin));
+        return Task.FromResult(adminsInGroup.All(canAttendPlayers.Contains));
     }
 
     /// <summary>
     /// Рассчитывает процент присутствующих игроков.
     /// </summary>
-    private double CalculateAttendanceRate(int canAttendCount, int totalCount) =>
+    private static double CalculateAttendanceRate(int canAttendCount, int totalCount) =>
         totalCount > 0 ? (double)canAttendCount / totalCount : 0;
 
     /// <summary>
@@ -176,14 +175,14 @@ public class SessionPlanningService
             _logger.LogDebug("Игрок {Username} (ID={TelegramId}) имеет {SlotsCount} слотов",
                 player.Username,
                 player.TelegramId,
-                player.Slots?.Count ?? 0);
+                player.Slots.Count);
         }
     }
 
     /// <summary>
     /// Обрабатывает ситуацию, когда пересечения не найдены — запускает рекомендации.
     /// </summary>
-    private async Task<AutoPlanningResult> HandleNoIntersectionsAsync(Group group, CancellationToken ct)
+    private async Task<AutoPlanningResult?> HandleNoIntersectionsAsync(Group group, CancellationToken ct)
     {
         var playersAvailability = await BuildPlayersAvailabilityAsync(group, ct);
         var recommendationResult = _recommendationService.FindRecommendations(playersAvailability, BotConstants.MinPlanningDurationHours);
@@ -200,15 +199,17 @@ public class SessionPlanningService
         }
 
         var bestOption = recommendationResult.GetBestOption();
-        return new AutoPlanningResult
-        {
-            Success = true,
-            HasIntersection = false,
-            HasRecommendations = true,
-            RecommendationResult = recommendationResult,
-            BestOption = bestOption,
-            Message = $"Найдена рекомендация: {bestOption.ProposedStartTime:dd.MM HH:mm}"
-        };
+        if (bestOption != null)
+            return new AutoPlanningResult
+            {
+                Success = true,
+                HasIntersection = false,
+                HasRecommendations = true,
+                RecommendationResult = recommendationResult,
+                BestOption = bestOption,
+                Message = $"Найдена рекомендация: {bestOption.ProposedStartTime:dd.MM HH:mm}"
+            };
+        return null;
     }
 
     /// <summary>
@@ -231,10 +232,9 @@ public class SessionPlanningService
             playersAvailability.Add(new PlayerAvailability
             {
                 PlayerId = player.TelegramId,
-                PlayerName = player.Username ?? $"Игрок {player.TelegramId}",
+                PlayerName = player.Username,
                 AvailableSlots = availableSlots,
                 PreferredStartTime = availableSlots.FirstOrDefault()?.Start,
-                PreferredEndTime = availableSlots.LastOrDefault()?.End
             });
         }
         _logger.LogInformation("Построена доступность для {Count} игроков группы {GroupName}",
@@ -247,7 +247,7 @@ public class SessionPlanningService
     /// Сбрасывает данные голосования в группе.
     /// </summary>
     /// <param name="group">Группа для сброса.</param>
-    public void ResetGroupVotingData(Group group)
+    public static void ResetGroupVotingData(Group group)
     {
         group.CurrentSessionUtc = null;
         group.ConfirmedPlayerIds.Clear();
@@ -273,13 +273,13 @@ public class SessionPlanningService
 /// </summary>
 public class AutoPlanningResult
 {
-    public bool Success { get; set; }
-    public bool HasIntersection { get; set; }
-    public bool HasRecommendations { get; set; }
-    public string Message { get; set; } = string.Empty;
-    public DateTimeRange? SelectedSlot { get; set; }
-    public RecommendationResult? RecommendationResult { get; set; }
-    public RecommendationOption? BestOption { get; set; }
+    public bool Success { get; init; }
+    public bool HasIntersection { get; init; }
+    public bool HasRecommendations { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public DateTimeRange? SelectedSlot { get; init; }
+    public RecommendationResult? RecommendationResult { get; init; }
+    public RecommendationOption? BestOption { get; init; }
 }
 
 /// <summary>
@@ -287,11 +287,11 @@ public class AutoPlanningResult
 /// </summary>
 public class SessionAvailabilityResult
 {
-    public bool HasSession { get; set; }
-    public List<Player> CanAttendPlayers { get; set; } = new List<Player>();
-    public List<Player> CannotAttendPlayers { get; set; } = new List<Player>();
-    public bool AdminsCanAttend { get; set; }
-    public double AttendanceRate { get; set; }
-    public bool ShouldConfirm { get; set; }
-    public bool ShouldReschedule { get; set; }
+    public bool HasSession { get; init; }
+    public List<Player> CanAttendPlayers { get; init; } = [];
+    public List<Player> CannotAttendPlayers { get; init; } = [];
+    public bool AdminsCanAttend { get; init; }
+    public double AttendanceRate { get; init; }
+    public bool ShouldConfirm { get; init; }
+    public bool ShouldReschedule { get; init; }
 }

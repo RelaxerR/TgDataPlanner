@@ -39,7 +39,7 @@ public class RsvpService
     /// <param name="group">Группа, в которой обновляется статус.</param>
     /// <param name="userId">Идентификатор игрока.</param>
     /// <param name="isComing">True если игрок подтверждает участие.</param>
-    public void UpdatePlayerRsvpStatus(Group group, long userId, bool isComing)
+    public static void UpdatePlayerRsvpStatus(Group group, long userId, bool isComing)
     {
         if (isComing)
         {
@@ -127,7 +127,6 @@ public class RsvpService
     {
         var adminsInGroup = group.Players.Where(p => group.AdminIds.Contains(p.TelegramId)).ToList();
         var cannotAttend = new List<Player>();
-        var sessionEnd = sessionStart.AddHours(BotConstants.DefaultSessionDurationHours);
 
         foreach (var admin in adminsInGroup)
         {
@@ -156,7 +155,6 @@ public class RsvpService
         return new SessionFinalizationResult
         {
             Status = SessionStatus.Confirmed,
-            Message = $"Сессия подтверждена ({participationRate:P1})",
             ParticipationRate = participationRate,
             ConfirmedCount = confirmedCount,
             TotalPlayers = totalPlayers
@@ -181,7 +179,6 @@ public class RsvpService
         return new SessionFinalizationResult
         {
             Status = SessionStatus.Rescheduled,
-            Message = "Требуется перепланирование — админы не могут присутствовать",
             ParticipationRate = participationRate,
             ConfirmedCount = confirmedCount,
             TotalPlayers = totalPlayers,
@@ -206,7 +203,6 @@ public class RsvpService
         return new SessionFinalizationResult
         {
             Status = SessionStatus.Cancelled,
-            Message = $"Сессия отменена ({participationRate:P1})",
             ParticipationRate = participationRate,
             ConfirmedCount = confirmedCount,
             TotalPlayers = totalPlayers
@@ -217,7 +213,7 @@ public class RsvpService
     /// Сбрасывает данные голосования в группе.
     /// </summary>
     /// <param name="group">Группа для сброса.</param>
-    private void ResetGroupVotingData(Group group)
+    private static void ResetGroupVotingData(Group group)
     {
         group.CurrentSessionUtc = null;
         group.ConfirmedPlayerIds.Clear();
@@ -228,7 +224,7 @@ public class RsvpService
     /// <summary>
     /// Возвращает список всех игроков группы для планирования и голосования.
     /// </summary>
-    private List<Player> GetTargetPlayers(Group group) =>
+    private static List<Player> GetTargetPlayers(Group group) =>
         group.Players.DistinctBy(p => p.TelegramId).ToList();
 
     /// <summary>
@@ -250,14 +246,11 @@ public class RsvpService
             return false;
         }
 
-        var finishedVotingIds = freshGroup.FinishedVotingPlayerIds?.ToHashSet() ?? new HashSet<long>();
-        foreach (var player in freshGroup.Players)
+        var finishedVotingIds = freshGroup.FinishedVotingPlayerIds?.ToHashSet() ?? [];
+        foreach (var player in freshGroup.Players.Where(player => player?.TelegramId == null || !finishedVotingIds.Contains(player.TelegramId)))
         {
-            if (player?.TelegramId == null || !finishedVotingIds.Contains(player.TelegramId))
-            {
-                _logger.LogDebug("Игрок {TelegramId} ещё не завершил голосование в группе {GroupName}", player.TelegramId, freshGroup.Name);
-                return false;
-            }
+            _logger.LogDebug("Игрок {TelegramId} ещё не завершил голосование в группе {GroupName}", player.TelegramId, freshGroup.Name);
+            return false;
         }
 
         _logger.LogDebug("Все {Count} игроков завершили голосование в группе {GroupName}", freshGroup.Players.Count, freshGroup.Name);
@@ -270,10 +263,9 @@ public class RsvpService
 /// </summary>
 public class SessionFinalizationResult
 {
-    public SessionStatus Status { get; set; }
-    public string Message { get; set; } = string.Empty;
-    public double ParticipationRate { get; set; }
-    public int ConfirmedCount { get; set; }
-    public int TotalPlayers { get; set; }
-    public List<Player> CannotAttendAdmins { get; set; } = new List<Player>();
+    public SessionStatus Status { get; init; }
+    public double ParticipationRate { get; init; }
+    public int ConfirmedCount { get; init; }
+    public int TotalPlayers { get; init; }
+    public List<Player> CannotAttendAdmins { get; init; } = [];
 }

@@ -22,12 +22,12 @@ public abstract class BaseHandler
     /// <summary>
     /// Клиент Telegram Bot API.
     /// </summary>
-    protected readonly ITelegramBotClient BotClient;
+    private readonly ITelegramBotClient BotClient;
 
     /// <summary>
     /// Идентификатор основного чата для системных уведомлений.
     /// </summary>
-    protected readonly long MainChatId;
+    private readonly long MainChatId;
 
     /// <summary>
     /// Список идентификаторов администраторов для проверки прав доступа.
@@ -84,7 +84,7 @@ public abstract class BaseHandler
         MainChatId = mainChatId;
 
         // Парсим список администраторов через запятую
-        AdminIds = new List<long>();
+        AdminIds = [];
         var adminIdsConfig = config["TelegramBot:AdminIds"];
         if (!string.IsNullOrWhiteSpace(adminIdsConfig))
         {
@@ -216,7 +216,7 @@ public abstract class BaseHandler
     /// <param name="replyMarkup">Разметка клавиатуры.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
-    protected async Task NotifyAllInGroupAsync(
+    private async Task NotifyAllInGroupAsync(
         Group group,
         string text,
         InlineKeyboardMarkup? replyMarkup,
@@ -266,7 +266,7 @@ public abstract class BaseHandler
     /// <param name="replyMarkup">Разметка клавиатуры.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача, представляющая отправленное сообщение.</returns>
-    protected async Task<Message> SendToMainAdminAsync(
+    private async Task<Message> SendToMainAdminAsync(
         string text,
         ReplyMarkup? replyMarkup,
         CancellationToken ct = default)
@@ -311,7 +311,7 @@ public abstract class BaseHandler
     /// <param name="replyMarkup">Разметка клавиатуры.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
-    protected async Task NotifyAllAdminsAsync(
+    private async Task NotifyAllAdminsAsync(
         string text,
         ReplyMarkup? replyMarkup,
         CancellationToken ct = default)
@@ -365,7 +365,7 @@ public abstract class BaseHandler
     /// <param name="replyMarkup">Разметка клавиатуры.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
-    protected async Task NotifyMainChatAsync(
+    private async Task NotifyMainChatAsync(
         string text,
         ReplyMarkup? replyMarkup,
         CancellationToken ct = default)
@@ -412,7 +412,7 @@ public abstract class BaseHandler
     /// <param name="replyMarkup">Новая разметка клавиатуры.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
-    protected async Task EditTextAsync(
+    private async Task EditTextAsync(
         CallbackQuery query,
         string text,
         InlineKeyboardMarkup? replyMarkup,
@@ -496,7 +496,7 @@ public abstract class BaseHandler
     /// <param name="showAlert">Показывать ли сообщение как всплывающее уведомление.</param>
     /// <param name="ct">Токен отмены операции.</param>
     /// <returns>Задача выполнения операции.</returns>
-    protected async Task AnswerCallbackAsync(
+    private async Task AnswerCallbackAsync(
         CallbackQuery callbackQuery,
         string? message,
         bool showAlert = false,
@@ -626,7 +626,7 @@ public abstract class BaseHandler
     /// <param name="text">Исходная строка.</param>
     /// <param name="maxLength">Максимальная длина результата.</param>
     /// <returns>Обрезанная строка.</returns>
-    protected static string Truncate(string text, int maxLength)
+    private static string Truncate(string text, int maxLength)
     {
         if (string.IsNullOrEmpty(text))
             return string.Empty;

@@ -128,7 +128,7 @@ public class SchedulingService
         List<(long PlayerId, DateTime TimeUtc)> allSlots,
         int totalPlayersCount)
     {
-        if (!allSlots.Any())
+        if (allSlots.Count == 0)
             return [];
 
         return allSlots
@@ -227,18 +227,7 @@ public class SchedulingService
 public record DateTimeRange(DateTime Start, DateTime End)
 {
     /// <summary>
-    /// Инициализирует новый экземпляр <see cref="DateTimeRange"/>.
-    /// </summary>
-    public DateTimeRange() : this(default, default) { }
-
-    /// <summary>
-    /// Вычисляет длительность интервала в часах.
-    /// </summary>
-    /// <returns>Длительность в часах как число с плавающей точкой.</returns>
-    public double GetDurationHours() => (End - Start).TotalHours;
-
-    /// <summary>
-    /// Возвращает человекочитаемое представление интервала.
+    /// Возвращает человеко читаемое представление интервала.
     /// </summary>
     /// <returns>Строка формата "dd.MM HH:mm — HH:mm".</returns>
     public override string ToString() =>

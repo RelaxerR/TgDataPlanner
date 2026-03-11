@@ -64,7 +64,7 @@ public class CallbackHandler : BaseHandler
     {
         if (callbackQuery.Data is null)
         {
-            _logger.LogWarning(BotConstants.CallbackHandlerLogs.CallbackNullData, callbackQuery.From?.Id);
+            _logger.LogWarning(BotConstants.CallbackHandlerLogs.CallbackNullData, callbackQuery.From.Id);
             await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
             return;
         }
@@ -213,10 +213,10 @@ public class CallbackHandler : BaseHandler
             return;
         }
 
-        _planningService.UpdateGroupSessionData(group, sessionTimeUtc);
+        SessionPlanningService.UpdateGroupSessionData(group, sessionTimeUtc);
         await Db.SaveChangesAsync(ct);
         await NotifyGroupAboutSessionAsync(group, admin, ct);
-        await _notificationService.EditTextAsync(callbackQuery, FormatSessionConfirmationText(group.Name, sessionTimeUtc, admin));
+        await _notificationService.EditTextAsync(callbackQuery, FormatSessionConfirmationText(group.Name, sessionTimeUtc, admin), ct: ct);
         await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
     }
 
@@ -257,7 +257,7 @@ public class CallbackHandler : BaseHandler
     private async Task NotifyGroupAboutSessionAsync(Group group, Player? admin, CancellationToken ct)
     {
         var localTime = ConvertUtcToLocal(group.CurrentSessionUtc!.Value, admin?.TimeZoneOffset ?? 0);
-        var rsvpKeyboard = _notificationService.CreateRsvpKeyboard(group.Id);
+        var rsvpKeyboard = GroupNotificationService.CreateRsvpKeyboard(group.Id);
         var escapedGroupName = BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
         var dateStr = localTime.ToString(BotConstants.DateFormats.FullLocalTimeFormat);
         var timeStr = localTime.ToString("HH:mm");
@@ -295,7 +295,7 @@ public class CallbackHandler : BaseHandler
             return;
         }
 
-        _rsvpService.UpdatePlayerRsvpStatus(group, userId, isComing);
+        RsvpService.UpdatePlayerRsvpStatus(group, userId, isComing);
         await Db.SaveChangesAsync(ct);
         var participationRate = _rsvpService.CalculateParticipationRate(group);
         await LogRsvpStatusAsync(group, participationRate);
@@ -324,7 +324,7 @@ public class CallbackHandler : BaseHandler
     /// <summary>
     /// Логирует статус RSVP для группы.
     /// </summary>
-    private async Task LogRsvpStatusAsync(Group group, double participationRate)
+    private Task LogRsvpStatusAsync(Group group, double participationRate)
     {
         var allPlayers = group.Players.DistinctBy(p => p.TelegramId).ToList();
         var totalPlayers = allPlayers.Count;
@@ -338,6 +338,7 @@ public class CallbackHandler : BaseHandler
             participationRate,
             respondedCount,
             totalPlayers);
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -474,10 +475,10 @@ public class CallbackHandler : BaseHandler
         }
 
         var selectedOption = recommendationResult.Options[optionIndex];
-        _planningService.UpdateGroupSessionData(group, selectedOption.ProposedStartTime);
+        SessionPlanningService.UpdateGroupSessionData(group, selectedOption.ProposedStartTime);
         await Db.SaveChangesAsync(ct);
         await NotifyGroupAboutSelectedRecommendationAsync(group, selectedOption, optionIndex, ct);
-        await _notificationService.EditTextAsync(callbackQuery, await FormatRecommendationSelectionText(group.Name, selectedOption, optionIndex));
+        await _notificationService.EditTextAsync(callbackQuery, await FormatRecommendationSelectionText(group.Name, selectedOption, optionIndex), ct: ct);
         await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
     }
 
@@ -506,7 +507,7 @@ public class CallbackHandler : BaseHandler
         var admin = AdminIds.FirstOrDefault();
         var adminPlayer = await UserService.GetPlayerAsync(admin, CancellationToken.None);
         var localStart = ConvertUtcToLocal(option.ProposedStartTime, adminPlayer?.TimeZoneOffset ?? 0);
-        var escapedName = BotConstants.TextHelpers.EscapeMarkdown(groupName ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
+        BotConstants.TextHelpers.EscapeMarkdown(groupName ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
         return string.Format(
             BotConstants.CallbackHandlerMessages.RecommendationSelectionText,
             optionIndex + 1,
@@ -524,29 +525,23 @@ public class CallbackHandler : BaseHandler
         var escapedGroupName = BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
         var dateStr = localStart.ToString(BotConstants.DateFormats.FullLocalTimeFormat);
         var timeStr = localStart.ToString("HH:mm");
-        var duration = (option.ProposedEndTime - option.ProposedStartTime).TotalHours;
-        var attendingPlayersText = FormatAttendingPlayersMarkdown(option.AttendingPlayerNames);
+        FormatAttendingPlayersMarkdown(option.AttendingPlayerNames);
         var announcementText = string.Format(
             BotConstants.PlayerMessages.SelectedRecommendationAnnouncement,
             optionIndex + 1,
             escapedGroupName,
             dateStr,
             timeStr,
-            option.GetPriorityDescription(),
-            option.AttendingPlayersCount,
-            option.TotalPlayersCount,
-            attendingPlayersText);
-        await _notificationService.NotifyAllInGroupAsync(group, announcementText, _notificationService.CreateRsvpKeyboard(group.Id), ct);
+            option.GetPriorityDescription());
+        await _notificationService.NotifyAllInGroupAsync(group, announcementText, GroupNotificationService.CreateRsvpKeyboard(group.Id), ct);
     }
 
     /// <summary>
     /// Форматирует список присутствующих игроков в Markdown.
     /// </summary>
-    private string FormatAttendingPlayersMarkdown(List<string> playerNames)
+    private static string FormatAttendingPlayersMarkdown(List<string> playerNames)
     {
-        if (playerNames == null || playerNames.Count == 0)
-            return BotConstants.CallbackHandlerMessages.NoData;
-        return string.Join(", ", playerNames.Select(name => $"@{BotConstants.TextHelpers.EscapeMarkdown(name)}"));
+        return playerNames.Count == 0 ? BotConstants.CallbackHandlerMessages.NoData : string.Join(", ", playerNames.Select(name => $"@{BotConstants.TextHelpers.EscapeMarkdown(name)}"));
     }
 
     /// <summary>
@@ -555,19 +550,19 @@ public class CallbackHandler : BaseHandler
     private async Task AutoRunPlanningForGroupAsync(Group group, CancellationToken ct)
     {
         var result = await _planningService.AutoPlanGroupAsync(group.Id, ct);
-        if (!result.Success)
+        if (result is { Success: false })
         {
             _logger.LogWarning(BotConstants.CallbackHandlerLogs.AutoPlanFailed, group.Id, result.Message);
             return;
         }
 
-        if (result.HasIntersection)
+        if (result is { HasIntersection: true })
         {
             await ScheduleSessionAndNotifyAsync(group, result.SelectedSlot!, ct);
         }
-        else if (result.HasRecommendations && result.BestOption != null)
+        else if (result is { HasRecommendations: true, BestOption: not null })
         {
-            await SendBestRecommendationAsync(group, result.RecommendationResult!, result.BestOption, ct);
+            await SendBestRecommendationAsync(group, result.BestOption, ct);
         }
     }
 
@@ -578,12 +573,12 @@ public class CallbackHandler : BaseHandler
     {
         var admin = await UserService.GetPlayerAsync(AdminIds.FirstOrDefault(), ct);
         var localStart = ConvertUtcToLocal(nearestSlot.Start, admin?.TimeZoneOffset ?? 0);
-        var localEnd = ConvertUtcToLocal(nearestSlot.End, admin?.TimeZoneOffset ?? 0);
-        _planningService.UpdateGroupSessionData(group, nearestSlot.Start);
+        ConvertUtcToLocal(nearestSlot.End, admin?.TimeZoneOffset ?? 0);
+        SessionPlanningService.UpdateGroupSessionData(group, nearestSlot.Start);
         await Db.SaveChangesAsync(ct);
         _logger.LogInformation(BotConstants.CallbackHandlerLogs.AutoSlotSelected, group.Name, nearestSlot.Start);
-        var announcementText = FormatAutoSessionAnnouncement(group, localStart, localEnd, nearestSlot);
-        var rsvpKeyboard = _notificationService.CreateRsvpKeyboard(group.Id);
+        var announcementText = FormatAutoSessionAnnouncement(group, localStart, nearestSlot);
+        var rsvpKeyboard = GroupNotificationService.CreateRsvpKeyboard(group.Id);
         await SendRsvpToAllPlayersAsync(group, announcementText, rsvpKeyboard, ct);
         await NotifyAdminAndMainChatAboutAutoPlanningAsync(group, localStart, ct);
     }
@@ -591,7 +586,7 @@ public class CallbackHandler : BaseHandler
     /// <summary>
     /// Форматирует текст анонса авто-сессии.
     /// </summary>
-    private string FormatAutoSessionAnnouncement(Group group, DateTime localStart, DateTime localEnd, DateTimeRange slot)
+    private static string FormatAutoSessionAnnouncement(Group group, DateTime localStart, DateTimeRange slot)
     {
         var escapedGroupName = BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
         var dateStr = localStart.ToString(BotConstants.DateFormats.FullLocalTimeFormat);
@@ -644,23 +639,26 @@ public class CallbackHandler : BaseHandler
     /// <summary>
     /// Отправляет лучшую рекомендацию игрокам.
     /// </summary>
-    private async Task SendBestRecommendationAsync(Group group, RecommendationResult result, RecommendationOption bestOption, CancellationToken ct)
+    private async Task SendBestRecommendationAsync(Group group, RecommendationOption bestOption, CancellationToken ct)
     {
         var admin = await UserService.GetPlayerAsync(AdminIds.FirstOrDefault(), ct);
-        var localStart = ConvertUtcToLocal(bestOption.ProposedStartTime, admin.TimeZoneOffset);
-        var localEnd = ConvertUtcToLocal(bestOption.ProposedEndTime, admin.TimeZoneOffset);
-        _planningService.UpdateGroupSessionData(group, bestOption.ProposedStartTime);
-        await Db.SaveChangesAsync(ct);
-        var announcementText = FormatRecommendedSessionAnnouncement(group, bestOption, localStart, localEnd);
-        var rsvpKeyboard = _notificationService.CreateRsvpKeyboard(group.Id);
-        await SendRsvpToAllPlayersAsync(group, announcementText, rsvpKeyboard, ct);
-        await NotifyAdminAboutRecommendationAsync(group, bestOption, localStart, ct);
+        if (admin != null)
+        {
+            var localStart = ConvertUtcToLocal(bestOption.ProposedStartTime, admin.TimeZoneOffset);
+            ConvertUtcToLocal(bestOption.ProposedEndTime, admin.TimeZoneOffset);
+            SessionPlanningService.UpdateGroupSessionData(group, bestOption.ProposedStartTime);
+            await Db.SaveChangesAsync(ct);
+            var announcementText = FormatRecommendedSessionAnnouncement(group, bestOption, localStart);
+            var rsvpKeyboard = GroupNotificationService.CreateRsvpKeyboard(group.Id);
+            await SendRsvpToAllPlayersAsync(group, announcementText, rsvpKeyboard, ct);
+            await NotifyAdminAboutRecommendationAsync(group, bestOption, localStart, ct);
+        }
     }
 
     /// <summary>
     /// Форматирует текст анонса рекомендованной сессии.
     /// </summary>
-    private string FormatRecommendedSessionAnnouncement(Group group, RecommendationOption option, DateTime localStart, DateTime localEnd)
+    private static string FormatRecommendedSessionAnnouncement(Group group, RecommendationOption option, DateTime localStart)
     {
         var escapedGroupName = BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
         var dateStr = localStart.ToString(BotConstants.DateFormats.FullLocalTimeFormat);
@@ -888,7 +886,7 @@ public class CallbackHandler : BaseHandler
 
         await _notificationService.EditTextAsync(callbackQuery, BotConstants.PlayerMessages.DataSaved, ct: ct);
         await _notificationService.NotifyMainChatAsync(string.Format(BotConstants.SystemNotifications.PlayerFinishedVoting, player.GetMarkdownUsername()), ct: ct);
-        await CheckGroupsReadinessAsync(groupsToCheck, userId, ct);
+        await CheckGroupsReadinessAsync(groupsToCheck, ct);
         await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
     }
 
@@ -922,14 +920,11 @@ public class CallbackHandler : BaseHandler
     private List<Group> UpdateFinishedVotingForGroups(List<Group> groups, long userId)
     {
         var updated = new List<Group>();
-        foreach (var group in groups)
+        foreach (var group in groups.Where(group => group.CurrentSessionUtc == null && !group.FinishedVotingPlayerIds.Contains(userId)))
         {
-            if (group.CurrentSessionUtc == null && !group.FinishedVotingPlayerIds.Contains(userId))
-            {
-                group.FinishedVotingPlayerIds.Add(userId);
-                updated.Add(group);
-                _logger.LogDebug("Игрок {UserId} добавил себя в finished voting для группы {GroupName}", userId, group.Name);
-            }
+            group.FinishedVotingPlayerIds.Add(userId);
+            updated.Add(group);
+            _logger.LogDebug("Игрок {UserId} добавил себя в finished voting для группы {GroupName}", userId, group.Name);
         }
         return updated;
     }
@@ -937,7 +932,7 @@ public class CallbackHandler : BaseHandler
     /// <summary>
     /// Проверяет готовность групп к планированию.
     /// </summary>
-    private async Task CheckGroupsReadinessAsync(List<Group> groups, long userId, CancellationToken ct)
+    private async Task CheckGroupsReadinessAsync(List<Group> groups, CancellationToken ct)
     {
         foreach (var group in groups)
         {
@@ -1057,7 +1052,7 @@ public class CallbackHandler : BaseHandler
         var reason = !result.AdminsCanAttend
             ? $"❌ **Администраторы не могут:** {string.Join(", ", GetAdminsInGroup(group).Where(a => !result.CanAttendPlayers.Contains(a)).Select(p => p.GetMarkdownUsername()))}"
             : $"❌ **Мало игроков:** {result.CanAttendPlayers.Count}/{group.Players.Count} ({result.AttendanceRate:P0})";
-        _planningService.ResetGroupVotingData(group);
+        SessionPlanningService.ResetGroupVotingData(group);
         group.SessionStatus = SessionStatus.Rescheduled;
         await Db.SaveChangesAsync(ct);
         var escapedGroupName = BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
@@ -1129,7 +1124,7 @@ public class CallbackHandler : BaseHandler
             }
 
             var escapedGroupName = BotConstants.TextHelpers.EscapeMarkdown(addedGroup.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
-            await _notificationService.EditTextAsync(callbackQuery, string.Format(BotConstants.PlayerMessages.JoinedGroup, escapedGroupName));
+            await _notificationService.EditTextAsync(callbackQuery, string.Format(BotConstants.PlayerMessages.JoinedGroup, escapedGroupName), ct: ct);
             await _notificationService.NotifyMainChatAsync(string.Format(BotConstants.SystemNotifications.PlayerJoinedGroup, user.GetMarkdownUsername(), escapedGroupName), ct: ct);
         }
         await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
@@ -1140,7 +1135,7 @@ public class CallbackHandler : BaseHandler
     /// </summary>
     private async Task ResetGroupVotingOnNewPlayerAsync(Group group, Player user, CancellationToken ct)
     {
-        _planningService.ResetGroupVotingData(group);
+        SessionPlanningService.ResetGroupVotingData(group);
         await Db.SaveChangesAsync(ct);
         _logger.LogInformation(BotConstants.CallbackHandlerLogs.GroupVotingReset, group.Name, user.TelegramId);
         var escapedGroupName = BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
@@ -1177,7 +1172,7 @@ public class CallbackHandler : BaseHandler
         await Db.SaveChangesAsync(ct);
         _logger.LogInformation(BotConstants.CallbackHandlerLogs.AdminDeletedGroup, userId, groupId, group.Name);
         var escapedName = BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
-        await _notificationService.EditTextAsync(callbackQuery, string.Format(BotConstants.AdminMessages.GroupDeleted, escapedName));
+        await _notificationService.EditTextAsync(callbackQuery, string.Format(BotConstants.AdminMessages.GroupDeleted, escapedName), ct: ct);
         await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
     }
 
@@ -1204,7 +1199,7 @@ public class CallbackHandler : BaseHandler
         {
             _logger.LogInformation(BotConstants.CallbackHandlerLogs.PlayerLeftGroup, userId, groupId, group.Name);
             var escapedName = BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
-            await _notificationService.EditTextAsync(callbackQuery, string.Format(BotConstants.PlayerMessages.LeftGroup, escapedName));
+            await _notificationService.EditTextAsync(callbackQuery, string.Format(BotConstants.PlayerMessages.LeftGroup, escapedName), ct: ct);
         }
         await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
     }
