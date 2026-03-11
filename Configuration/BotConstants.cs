@@ -81,76 +81,76 @@ namespace TgDataPlanner.Configuration
         /// </summary>
         public static class AdminMessages
         {
-            public const string AdminOnlyAction = "🔒 Только Мастер может выполнить это действие";
-            public const string AdminOnlyPlanning = "🔒 Только администратор может запускать планирование";
-            public const string AdminOnlyRecommendations = "🔒 Только Мастер может запрашивать рекомендации";
-            public const string AdminOnlyCancel = "🔒 Только Мастер может отменять сессии";
-            public const string AdminOnlyDeleteGroup = "🔒 Только администратор может удалять группы";
-            public const string AdminOnlyRequestFreeTime = "🔒 Только Мастер может запрашивать свободное время";
-            public const string AdminOnlySelectRecommendation = "🔒 Только Мастер может выбирать рекомендации";
-            public const string AdminOnlyViewMembers = "🔒 Только Мастер может просматривать состав группы";
-            public const string GroupCreated = "✅ Группа **{0}** успешно создана!";
-            public const string GroupDeleted = "🗑 Группа **{0}** удалена.";
-            public const string SessionConfirmed = "🎉 **Сессия подтверждена!**\n👥 Группа: **{0}**\n📅 Дата: **{1}** (МСК)\n✅ Подтвердили: {2}/{3} ({4:P0})\n{5}\nЖдём всех в назначенное время! ⚔️";
-            public const string SessionConfirmedWithPlayers = "🎉 **Сессия подтверждена!**\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Время: **{2}** (по МСК)\n\n📋 **Участники группы:**\n{3}\n\n✅ Подтвердили: {4}/{5} ({6:P0})\n{7}\nЖдём всех в назначенное время! ⚔️";
-            public const string SessionCancelled = "😔 **Сессия отменена**\nК сожалению, не набралось достаточное количество игроков ({0:P0}).\nМастер получит уведомление и, возможно, запустит новый сбор времени.";
-            public const string SessionRescheduled = "⚠️ **Требуется перепланирование!**\n👥 Группа: **{0}**\n{1}\n✅ Игроков подтвердили: {2}/{3} ({4:P0})\n🎯 Требуется: {5:P0} игроков + ВСЕ админы\nЗапускаю поиск нового времени...";
-            public const string AutoPlanningCompleted = "🤖 **Авто-планирование завершено**\n✅ Выбрано ближайшее окно: **{0}**\n👥 Игроков в группе: **{1}**\nИгрокам отправлены запросы на подтверждение. Как только 75% подтвердят — сессия будет финализирована.";
-            public const string RecommendationsTitle = "📊 **Варианты рекомендаций для {0}**\nВсего найдено: {1} вариантов";
-            public const string NoIntersectionsFound = "😔 **Пересечений не найдено.** Все игроки заняты в разное время.\n*Рекомендации также недоступны.*";
-            public const string NoRecommendationsFound = "😔 **Авто-планирование: {0}**\nК сожалению, общие окна не найдены и рекомендации недоступны.\n💡 Попробуйте:\n• Попросить игроков добавить больше вариантов\n• Уменьшить минимальную длительность сессии";
-            public const string PlanningError = "❌ **Ошибка авто-планирования: {0}**\nПроизошла непредвиденная ошибка при поиске рекомендаций.\nДетали: {1}";
-            public const string GroupMembersTitle = "👥 **Состав группы: {0}**\n\n📋 **Игроки ({1}):**\n{2}\n\n🎯 **Администраторы ({3}):**\n{4}";
-            public const string NoAdminsInGroup = "ℹ️ В группе нет администраторов";
-            public const string SessionInfoTitle = "📅 **Информация о сессии: {0}**\n\n🗓️ **Дата и время:** {1}\n🕒 **Длительность:** {2} ч.\n📊 **Статус:** {3}\n\n✅ **Подтвердили ({4}/{5}):**\n{6}\n\n❌ **Не смогут ({7}/{8}):**\n{9}";
-            public const string NoSessionScheduled = "ℹ️ **Сессия не запланирована**\nДля группы **{0}** ещё не назначено время игры.\nИспользуйте команду /request для сбора доступности игроков.";
+            public const string AdminOnlyAction = "🔒 Только Мастер Подземелий обладает властью выполнить это действие";
+            public const string AdminOnlyPlanning = "🔒 Лишь Мастер может бросить кубы планирования";
+            public const string AdminOnlyRecommendations = "🔒 Только Мастер может вопрошать о рекомендациях";
+            public const string AdminOnlyCancel = "🔒 Лишь Мастер может отменить назначенную сессию";
+            public const string AdminOnlyDeleteGroup = "🔒 Только Мастер может распустить группу";
+            public const string AdminOnlyRequestFreeTime = "🔒 Лишь Мастер может запросить расписание героев";
+            public const string AdminOnlySelectRecommendation = "🔒 Только Мастер может избрать рекомендацию";
+            public const string AdminOnlyViewMembers = "🔒 Лишь Мастер может узреть состав группы";
+            public const string GroupCreated = "✅ **Группа \"{0}\" создана!**\nДа начнётся новое приключение!";
+            public const string GroupDeleted = "🗑 **Группа \"{0}\" распущена.**\nИстория этой партии завершена.";
+            public const string SessionConfirmed = "🎉 **СЕССИЯ ПОДТВЕРЖДЕНА!**\n👥 Группа: **{0}**\n📅 Дата: **{1}** (МСК)\n✅ Героев готово: {2}/{3} ({4:P0})\n{5}\nГотовьте кубы и листы персонажей! ⚔️🎲";
+            public const string SessionConfirmedWithPlayers = "🎉 **СЕССИЯ ПОДТВЕРЖДЕНА!**\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Время: **{2}** (по МСК)\n\n📋 **Отряд героев:**\n{3}\n\n✅ Готовы к бою: {4}/{5} ({6:P0})\n{7}\nУвидимся за игровым столом! ⚔️";
+            public const string SessionCancelled = "😔 **СЕССИЯ ОТМЕНЕНА**\nУвы, недостаточно героев откликнулось ({0:P0}).\nМастерь получит уведомление и, возможно, бросит кубы планирования заново.";
+            public const string SessionRescheduled = "⚠️ **ТРЕБУЕТСЯ ПЕРЕПЛАНИРОВАНИЕ!**\n👥 Группа: **{0}**\n{1}\n✅ Героев подтвердило: {2}/{3} ({4:P0})\n🎯 Требуется: {5:P0} героев + ВСЕ Мастера\nЗапускаю поиск нового времени... 🎲";
+            public const string AutoPlanningCompleted = "🤖 **АВТО-ПЛАНИРОВАНИЕ ЗАВЕРШЕНО**\n✅ Избрано ближайшее окно: **{0}**\n👥 Героев в группе: **{1}**\nИгрокам отправлены свитки с приглашением. Как только 75% подтвердят — сессия будет назначена!";
+            public const string RecommendationsTitle = "📊 **ВАРИАНТЫ ДЛЯ ГРУППЫ \"{0}\"**\nНайдено вариантов: {1}";
+            public const string NoIntersectionsFound = "😔 **ПЕРЕСЕЧЕНИЙ НЕ НАЙДЕНО.**\nГерои заняты в разное время, звёзды не сошлись.\n*Рекомендации также недоступны.*";
+            public const string NoRecommendationsFound = "😔 **АВТО-ПЛАНИРОВАНИЕ: {0}**\nУвы, общие окна не найдены и рекомендации недоступны.\n💡 Попробуйте:\n• Попросить героев добавить больше вариантов\n• Уменьшить длительность сессии";
+            public const string PlanningError = "❌ **ОШИБКА АВТО-ПЛАНИРОВАНИЯ: {0}**\nНепредвиденная магия помешала поиску рекомендаций.\nДетали: {1}";
+            public const string GroupMembersTitle = "👥 **СОСТАВ ОТРЯДА: {0}**\n\n📋 **Герои ({1}):**\n{2}\n\n🎯 **Мастера ({3}):**\n{4}";
+            public const string NoAdminsInGroup = "ℹ️ В группе нет Мастеров";
+            public const string SessionInfoTitle = "📅 **ИНФОРМАЦИЯ О СЕССИИ: {0}**\n\n🗓️ **Дата и время:** {1}\n🕒 **Длительность:** {2} ч.\n📊 **Статус:** {3}\n\n✅ **Подтвердили ({4}/{5}):**\n{6}\n\n❌ **Не смогут ({7}/{8}):**\n{9}";
+            public const string NoSessionScheduled = "ℹ️ **СЕССИЯ НЕ ЗАПЛАНИРОВАНА**\nДля группы **{0}** ещё не назначено время приключений.\nИспользуйте команду /request, чтобы собрать расписание героев.";
         }
         /// <summary>
         /// Сообщения, отображаемые обычным игрокам.
         /// </summary>
         public static class PlayerMessages
         {
-            public const string WelcomePlayer = "🛡 **Привет, Искатель Приключений!**\nЯ помогу твоей группе собраться на следующую игру.";
-            public const string WelcomeAdmin = "🧙 **Приветствую, Великий Мастер!**\nЯ твой верный помощник в планировании сессий.";
-            public const string TimeZoneSet = "✅ Ваш часовой пояс установлен: **UTC {0}**";
-            public const string TimeZoneError = "⚠️ Ошибка при обновлении настроек";
-            public const string TimeZoneFormatError = "⚠️ Неверный формат часового пояса";
-            public const string ActionCancelled = "🚫 Действие отменено.";
-            public const string DataSaved = "✅ Данные сохранены!";
-            public const string AlreadyInGroup = "ℹ️ Вы уже состоите в группе **{0}**";
-            public const string NotInGroup = "ℹ️ Вы не состоите в этой группе";
-            public const string JoinedGroup = "⚔️ Вы вступили в группу **{0}**!";
-            public const string LeftGroup = "🚪 Вы покинули группу **{0}**.";
-            public const string RsvpConfirmed = "✅ Вы подтвердили участие.";
-            public const string RsvpDeclined = "❌ Вы отказались.";
+            public const string WelcomePlayer = "🛡 **Приветствую, Искатель Приключений!**\nЯ — твой проводник в мире планирования сессий.\nВместе мы соберём твою группу для следующего эпического приключения!";
+            public const string WelcomeAdmin = "🧙 **Приветствую, Великий Мастер Подземелий!**\nЯ — твой верный магический помощник.\nПозволь мне взять на себя заботы о планировании, пока ты готовишь приключения!";
+            public const string TimeZoneSet = "✅ **Твой часовой пояс установлен: UTC {0}**\nТеперь все времена будут отображаться правильно!";
+            public const string TimeZoneError = "⚠️ Ошибка при обновлении настроек часового пояса";
+            public const string TimeZoneFormatError = "⚠️ Неверный формат часового пояса. Укажи смещение как +3 или -5";
+            public const string ActionCancelled = "🚫 Действие отменено. Возвращаемся к началу пути.";
+            public const string DataSaved = "✅ Данные сохранены в магических кристаллах!";
+            public const string AlreadyInGroup = "ℹ️ Ты уже состоишь в группе **{0}**";
+            public const string NotInGroup = "ℹ️ Ты не состоишь в этой группе";
+            public const string JoinedGroup = "⚔️ **ТЫ ВСТУПИЛ В ГРУППУ \"{0}\"!**\nДобро пожаловать в отряд, герой!";
+            public const string LeftGroup = "🚪 **ТЫ ПОКИНУЛ ГРУППУ \"{0}\".**\nТвой путь с этим отрядом завершён.";
+            public const string RsvpConfirmed = "✅ Ты подтвердил своё участие. Увидимся за столом!";
+            public const string RsvpDeclined = "❌ Ты отказался от участия. Жаль, но мы поймём!";
             public const string RsvpError = "⚠️ Ошибка: данные не найдены";
-            public const string RsvpStatusFixed = "ℹ️ Статус сессии уже определён";
-            public const string CalendarTitle = "📅 **Ваш личный календарь**\nВыберите дату, чтобы отметить свободные часы:";
-            public const string TimeSelectionTitle = "🕒 Выберите время для **{0}**:";
-            public const string CalendarSentToPM = "📩 {0}, отправил календарь вам в личку!";
-            public const string CalendarPmFailed = "❌ {0}, я не могу написать вам. Пожалуйста, начните со мной диалог в личке.";
-            public const string FreeTimeRequest = "🎲 **Запрос свободного времени**\nМастер запрашивает ваше расписание для планирования следующей сессии группы **{0}**.\n👉 Пожалуйста, укажите когда вы свободны, используя команду /free\n📝 Инструкция:\n1. Нажмите /free или введите эту команду в чат с ботом\n2. Выберите удобные даты в календаре\n3. Отметьте часы, когда вы доступны для игры\n4. Подтвердите выбор кнопкой «✅ ЗАВЕРШИТЬ ЗАПОЛНЕНИЕ»\n⏰ Чем быстрее вы заполните расписание, тем скорее Мастер сможет назначить игру!";
-            public const string SessionAnnouncement = "⚔️ **ОБЪЯВЛЕН СБОР НА ПАРТИЮ!** ⚔️\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Начало: **{2}** (по МСК)\nИгроки, подтвердите явку кнопками ниже!";
-            public const string SessionAnnouncementWithPlayers = "⚔️ **ОБЪЯВЛЕН СБОР НА ПАРТИЮ!** ⚔️\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Начало: **{2}** (по МСК)\n\n📋 **Участники группы:**\n{3}\n\nИгроки, подтвердите явку кнопками ниже!";
-            public const string AutoSessionAnnouncement = "⚔️ **АВТО-НАЗНАЧЕНИЕ СЕССИИ** ⚔️\n🤖 Бот подобрал оптимальное время на основе вашего расписания.\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Начало: **{2}** (по МСК)\n⏳ Длительность: **{3} ч.**\n❗ Пожалуйста, подтвердите явку кнопками ниже!\n🎯 Для подтверждения сессии требуется **75%** игроков.";
-            public const string AutoSessionAnnouncementPM = "⚔️ **НАПОМИНАНИЕ: АВТО-НАЗНАЧЕНИЕ СЕССИИ** ⚔️\n🤖 Бот подобрал оптимальное время на основе вашего расписания.\n👥 Группа: **{0}**\n📅 Дата: **{1}** (ваше время: {2})\n🕒 Начало: **{3}** (по МСК)\n⏳ Длительность: **{4} ч.**\n❗ Пожалуйста, подтвердите явку кнопками ниже!\n🎯 Для подтверждения сессии требуется **75%** игроков.";
-            public const string RecommendedSessionAnnouncement = "⚔️ **РЕКОМЕНДОВАННОЕ ВРЕМЯ** ⚔️\n🤖 Бот подобрал оптимальное время с учётом доступности.\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Начало: **{2}** (по МСК)\n⏳ Длительность: **{3} ч.**\n✅ **Свободны ({4}/{5}):**\n{6}\n❗ Пожалуйста, подтвердите явку кнопками ниже!";
-            public const string SelectedRecommendationAnnouncement = "⚔️ **ВЫБРАН ВАРИАНТ #{0}** ⚔️\n👥 Группа: **{1}**\n📅 Дата: **{2}**\n🕒 Начало: **{3}** (по МСК)\n📊 {4}\nИгроки, подтвердите явку кнопками ниже!";
-            public const string SelectedRecommendationAnnouncementPM = "⚔️ **ВЫБРАН ВАРИАНТ #{0}** ⚔️\n👥 Группа: **{1}**\n📅 Дата: **{2}** (ваше время: {3})\n🕒 Начало: **{4}** (по МСК)\n📊 {5}\nПожалуйста, подтвердите явку кнопками ниже!";
-            public const string SessionConfirmedPM = "🎉 **СЕССИЯ ПОДТВЕРЖДЕНА!** 🎉\n👥 Группа: **{0}**\n📅 Дата: **{1}** (ваше время: {2})\n🕒 Начало: **{3}** (по МСК)\n\n✅ Вы подтвердили участие.\nЖдём вас в назначенное время! ⚔️";
-            public const string SessionStillValid = "📅 **Сессия остаётся в силе!**\n👥 Группа: **{0}**\n📅 Дата: **{1}** (МСК)\n✅ Могут присутствовать: {2}/{3} ({4:P0})\n🎯 Требуется: {5:P0}\n{6}\nВремя игры не изменилось!";
-            public const string PlayerCannotAttendWarning = "⚠️ **Внимание!**\nВы обновили расписание и больше не можете присутствовать на сессии группы **{0}**.\n📅 Дата: **{1}** (МСК)\n✅ Однако сессия остаётся в силе, так как набралось достаточно игроков ({2:P0}).\nЕсли вы всё же планируете быть — пожалуйста, обновите своё расписание.";
-            public const string NewPlanningRequired = "⚠️ **Требуется новое планирование!**\n👥 Группа: **{0}**\n{1}\n🎯 Требуется: {2:P0} игроков + ВСЕ админы\nЗапускаю поиск нового времени...";
-            public const string RequestSentToGroup = "✅ Запрос отправлен!\n📬 Уведомление отправлен в чат группы\n👥 Группа: **{0}**\n🔄 Данные голосования сброшены.\nКак только все игроки нажмут «Завершить заполнение», запустится авто-планирование.";
+            public const string RsvpStatusFixed = "ℹ️ Статус сессии уже определён и не может быть изменён";
+            public const string CalendarTitle = "📅 **ТВОЙ ЛИЧНЫЙ ГРИМУАР ВРЕМЕНИ**\nВыбери даты и отметь часы, когда ты свободен для приключений:";
+            public const string TimeSelectionTitle = "🕒 **ВЫБЕРИ ВРЕМЯ ДЛЯ {0}**\nОтметь часы, когда готов к игре:";
+            public const string CalendarSentToPM = "📩 {0}, я отправил тебе личный гримуар в сообщения!";
+            public const string CalendarPmFailed = "❌ {0}, я не могу написать тебе. Пожалуйста, начни со мной диалог в личных сообщениях.";
+            public const string FreeTimeRequest = "🎲 **ЗАПРОС СВОБОДНОГО ВРЕМЕНИ**\n\nМастер запрашивает твоё расписание для планирования следующей сессии группы **{0}**.\n\n👉 **Пожалуйста, укажи когда ты свободен:**\n\n📝 **Инструкция:**\n1. Нажми /free или введи эту команду в чат с ботом\n2. Выбери удобные даты в календаре\n3. Отметь часы, когда доступен для игры\n4. Подтверди выбор кнопкой «✅ ЗАВЕРШИТЬ ЗАПОЛНЕНИЕ»\n\n⏰ Чем быстрее ты заполнишь расписание, тем скорее начнётся приключение!";
+            public const string SessionAnnouncement = "⚔️ **ОБЪЯВЛЕН СБОР НА ПАРТИЮ!** ⚔️\n\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Начало: **{2}** (по МСК)\n\n🎲 Герои, подтвердите явку кнопками ниже!\nПусть кубы будут благосклонны к вам!";
+            public const string SessionAnnouncementWithPlayers = "⚔️ **ОБЪЯВЛЕН СБОР НА ПАРТИЮ!** ⚔️\n\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Начало: **{2}** (по МСК)\n\n📋 **Участники отряда:**\n{3}\n\nИгроки, подтвердите явку кнопками ниже!";
+            public const string AutoSessionAnnouncement = "⚔️ **АВТО-НАЗНАЧЕНИЕ СЕССИИ** ⚔️\n\n🤖 Бот-помощник подобрал оптимальное время на основе вашего расписания.\n\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Начало: **{2}** (по МСК)\n⏳ Длительность: **{3} ч.**\n\n❗ Пожалуйста, подтвердите явку кнопками ниже!\n🎯 Для подтверждения сессии требуется **75%** героев.";
+            public const string AutoSessionAnnouncementPM = "⚔️ **НАПОМИНАНИЕ: АВТО-НАЗНАЧЕНИЕ СЕССИИ** ⚔️\n\n🤖 Бот-помощник подобрал оптимальное время на основе вашего расписания.\n\n👥 Группа: **{0}**\n📅 Дата: **{1}** (ваше время: {2})\n🕒 Начало: **{3}** (по МСК)\n⏳ Длительность: **{4} ч.**\n\n❗ Пожалуйста, подтвердите явку кнопками ниже!\n🎯 Для подтверждения сессии требуется **75%** героев.";
+            public const string RecommendedSessionAnnouncement = "⚔️ **РЕКОМЕНДОВАННОЕ ВРЕМЯ** ⚔️\n\n🤖 Бот подобрал оптимальное время с учётом доступности.\n\n👥 Группа: **{0}**\n📅 Дата: **{1}**\n🕒 Начало: **{2}** (по МСК)\n⏳ Длительность: **{3} ч.**\n\n✅ **Свободны ({4}/{5}):**\n{6}\n\n❗ Пожалуйста, подтвердите явку кнопками ниже!";
+            public const string SelectedRecommendationAnnouncement = "⚔️ **ВЫБРАН ВАРИАНТ #{0}** ⚔️\n\n👥 Группа: **{1}**\n📅 Дата: **{2}**\n🕒 Начало: **{3}** (по МСК)\n📊 {4}\n\nИгроки, подтвердите явку кнопками ниже!";
+            public const string SelectedRecommendationAnnouncementPM = "⚔️ **ВЫБРАН ВАРИАНТ #{0}** ⚔️\n\n👥 Группа: **{1}**\n📅 Дата: **{2}** (ваше время: {3})\n🕒 Начало: **{4}** (по МСК)\n📊 {5}\n\nПожалуйста, подтвердите явку кнопками ниже!";
+            public const string SessionConfirmedPM = "🎉 **СЕССИЯ ПОДТВЕРЖДЕНА!** 🎉\n\n👥 Группа: **{0}**\n📅 Дата: **{1}** (ваше время: {2})\n🕒 Начало: **{3}** (по МСК)\n\n✅ Вы подтвердили участие.\nГотовьте кубы и листы персонажей!\nЖдём вас в назначенное время! ⚔️";
+            public const string SessionStillValid = "📅 **СЕССИЯ ОСТАЁТСЯ В СИЛЕ!**\n\n👥 Группа: **{0}**\n📅 Дата: **{1}** (МСК)\n✅ Могут присутствовать: {2}/{3} ({4:P0})\n🎯 Требуется: {5:P0}\n{6}\n\nВремя игры не изменилось! Готовьтесь к приключению!";
+            public const string PlayerCannotAttendWarning = "⚠️ **ВНИМАНИЕ!**\n\nВы обновили расписание и больше не можете присутствовать на сессии группы **{0}**.\n\n📅 Дата: **{1}** (МСК)\n\n✅ Однако сессия остаётся в силе, так как набралось достаточно героев ({2:P0}).\n\nЕсли вы всё же планируете быть — пожалуйста, обновите своё расписание.";
+            public const string NewPlanningRequired = "⚠️ **ТРЕБУЕТСЯ НОВОЕ ПЛАНИРОВАНИЕ!**\n\n👥 Группа: **{0}**\n{1}\n🎯 Требуется: {2:P0} героев + ВСЕ Мастера\n\nЗапускаю поиск нового времени... 🎲";
+            public const string RequestSentToGroup = "✅ **ЗАПРОС ОТПРАВЛЕН!**\n\n📬 Уведомление отправлено в чат группы\n👥 Группа: **{0}**\n🔄 Данные голосования сброшены.\n\nКак только все герои нажмут «Завершить заполнение», запустится авто-планирование.";
             public const string RequestSentCallbackResponse = "Запрос отправлен в чат группы {0}";
-            public const string GroupMembersList = "👥 **Участники группы: {0}**\n\n📋 **Игроки ({1}):**\n{2}";
-            public const string SessionInfoPlayer = "📅 **Ваша следующая сессия: {0}**\n\n🗓️ **Дата и время:** {1} (ваше время: {2})\n🕒 **Начало по МСК:** {3}\n📊 **Статус:** {4}\n\n✅ **Вы:** {5}";
-            public const string NoSessionForPlayer = "ℹ️ **У вас нет запланированных сессий**\nВы не состоите ни в одной группе с назначенной сессией.\nИспользуйте /join для вступления в группу.";
-            public const string YouAreConfirmed = "✅ Подтвердили участие";
-            public const string YouAreDeclined = "❌ Не сможете присутствовать";
-            public const string YouHaveNotResponded = "⏳ Ещё не ответили";
-            public const string HelpTitle = "❓ **Справка по командам**";
-            public const string HelpText = "🛡 **Привет, Искатель Приключений!**\nЯ помогу твоей группе собраться на следующую игру.\n\n**Доступные команды:**\n📅 /free — Отметить свое свободное время (в личке)\n🌍 /timezone — Настроить свой часовой пояс\n👥 /join — Вступить в группу (вызывать в чате группы)\n📊 /status — Проверить статус планирования\n❓ /help — Показать эту справку\n\n**Команды Мастера:**\n/group — Создать новую группу\n/delgroup — Удалить группу\n/request — Запросить у игроков свободное время\n/plan — Найти идеальное время для игры\n/recommendations — Показать рекомендации\n/cancel — Отменить активную сессию\n\n**Важно:** Для подтверждения сессии требуется 75% игроков + ВСЕ администраторы";
+            public const string GroupMembersList = "👥 **УЧАСТНИКИ ГРУППЫ: {0}**\n\n📋 **Герои ({1}):**\n{2}";
+            public const string SessionInfoPlayer = "📅 **ТВОЯ СЛЕДУЮЩАЯ СЕССИЯ: {0}**\n\n🗓️ **Дата и время:** {1} (ваше время: {2})\n🕒 **Начало по МСК:** {3}\n📊 **Статус:** {4}\n\n✅ **Ты:** {5}";
+            public const string NoSessionForPlayer = "ℹ️ **У ТЕБЯ НЕТ ЗАПЛАНИРОВАННЫХ СЕССИЙ**\nТы не состоишь ни в одной группе с назначенной сессией.\nИспользуй /join, чтобы вступить в группу и отправиться в приключение!";
+            public const string YouAreConfirmed = "✅ Подтвердил участие";
+            public const string YouAreDeclined = "❌ Не сможешь присутствовать";
+            public const string YouHaveNotResponded = "⏳ Ещё не ответил";
+            public const string HelpTitle = "❓ **ГРИМУАР ЗНАНИЙ (СПРАВКА)**";
+            public const string HelpText = "🛡 **Приветствую, Искатель Приключений!**\n\nЯ — твой проводник в мире планирования сессий D&D.\nПозволь мне помочь тебе и твоей группе собраться для следующего эпического приключения!\n\n**📜 ДОСТУПНЫЕ КОМАНДЫ:**\n\n📅 **/free** — Открыть личный календарь и отметить свободные часы\n🌍 **/timezone** — Настроить свой часовой пояс\n👥 **/join** — Вступить в группу (вызывать в чате группы)\n📊 **/status** — Проверить статус планирования\n👥 **/members** — Показать участников группы\n📅 **/session** — Информация о следующей сессии\n❓ **/help** — Показать эту справку\n\n**🧙 КОМАНДЫ МАСТЕРА:**\n\n/group — Создать новую группу\n/delgroup — Удалить группу\n/request — Запросить у игроков свободное время\n/plan — Найти идеальное время для игры\n/recommendations — Показать рекомендации\n/cancel — Отменить активную сессию\n\n**⚠️ ВАЖНО:**\nДля подтверждения сессии требуется **75% игроков + ВСЕ администраторы**\n\nПусть ваши кубы всегда падают критическим успехом! 🎲✨";
         }
         /// <summary>
         /// Системные уведомления в основной чат.
@@ -158,15 +158,15 @@ namespace TgDataPlanner.Configuration
         public static class SystemNotifications
         {
             public const string Prefix = "🔔 ";
-            public const string PlayerFinishedVoting = "🔔 **@{0}** завершил заполнение расписания!";
-            public const string PlayerJoinedGroup = "⚔️ Игрок @{0} вступил в группу **{1}**!";
-            public const string GroupChanged = "⚠️ **Состав группы изменён**\nИгрок @{0} присоединился к группе **{1}**.\nГолосование сброшено — всем игрокам нужно заново заполнить расписание.";
-            public const string TimeAssigned = "🎯 **Время игры назначено!**\nБот автоматически подобрал ближайшее окно: **{0}**\nИгроки, проверьте ЛС от бота и подтвердите участие! ⚔️";
+            public const string PlayerFinishedVoting = "🔔 **@{0}** завершил заполнение своего гримуара времени!";
+            public const string PlayerJoinedGroup = "⚔️ Герой **@{0}** вступил в группу **{1}**!";
+            public const string GroupChanged = "⚠️ **СОСТАВ ГРУППЫ ИЗМЕНИЛСЯ**\nИгрок **@{0}** присоединился к группе **{1}**.\n\n🔄 Голосование сброшено — всем героям нужно заново заполнить расписание.";
+            public const string TimeAssigned = "🎯 **ВРЕМЯ ИГРЫ НАЗНАЧЕНО!**\n\nБот-помощник автоматически подобрал ближайшее окно: **{0}**\n\nИгроки, проверьте личные сообщения от бота и подтвердите участие! ⚔️🎲";
             public const string NoTimeFound = "😔 **Группа {0}**: не найдено подходящего времени\nИгрокам будет отправлено уведомление с рекомендациями.";
             public const string FreeTimeRequested = "🔔 Мастер запросил свободное время для группы **{0}**. {1}";
-            public const string FreeTimeRequestedWithCancel = "🔔 Мастер запросил свободное время для группы **{0}**. ⚠️ Предыдущая сессия отменена — требуется новое планирование!";
-            public const string SessionConfirmedNotification = "🎉 **Сессия подтверждена для группы {0}!**\n📅 {1}\nВсе игроки получат уведомление в личные сообщения.";
-            public const string SessionReminder = "⏰ **Напоминание о сессии**\nГруппа: **{0}**\nВремя: **{1}**\nНе забудьте подтвердить участие!";
+            public const string FreeTimeRequestedWithCancel = "🔔 Мастер запросил свободное время для группы **{0}**.\n\n⚠️ Предыдущая сессия отменена — требуется новое планирование!";
+            public const string SessionConfirmedNotification = "🎉 **СЕССИЯ ПОДТВЕРЖДЕНА ДЛЯ ГРУППЫ {0}!**\n📅 {1}\n\nВсе игроки получат свитки с приглашением в личные сообщения.";
+            public const string SessionReminder = "⏰ **НАПОМИНАНИЕ О СЕССИИ**\n\nГруппа: **{0}**\nВремя: **{1}**\n\nНе забудьте подтвердить участие! ⚔️";
         }
         /// <summary>
         /// Тексты кнопок и элементов интерфейса.
@@ -211,13 +211,13 @@ namespace TgDataPlanner.Configuration
             public const string Members = "/members";
             public const string SessionInfo = "/session";
             public const string Help = "/help";
-            public const string CommandsList = "\n**Доступные команды:**\n📅 /free — Отметить свое свободное время (в личке)\n🌍 /timezone — Настроить свой часовой пояс\n👥 /join — Вступить в группу (вызывать в чате группы)\n📊 /status — Проверить статус планирования\n👥 /members — Показать участников группы\n📅 /session — Информация о следующей сессии";
-            public const string AdminCommandsList = "\n**Команды Мастера:**\n/group — Создать новую группу\n/delgroup — Удалить группу\n/request — Запросить у игроков свободное время\n/plan — Найти идеальное время для игры\n/recommendations — Показать рекомендации (если нет пересечений)\n/cancel — Отменить активную сессию планирования";
-            public const string ImportantNote = "\n**Важно:** Для подтверждения сессии требуется 75% игроков + ВСЕ администраторы";
-            public const string InDevelopment = "\n**В разработке:**\n⏳ _Авто-напоминания за 5ч и 1ч до игры_\n📊 _Статус заполнения времени группой_";
-            public const string MembersPrompt = "👥 **Просмотр участников**\nВыберите группу, чтобы увидеть её состав:";
+            public const string CommandsList = "\n**📜 ДОСТУПНЫЕ КОМАНДЫ:**\n📅 /free — Отметить свое свободное время (в личке)\n🌍 /timezone — Настроить свой часовой пояс\n👥 /join — Вступить в группу (вызывать в чате группы)\n📊 /status — Проверить статус планирования\n👥 /members — Показать участников группы\n📅 /session — Информация о следующей сессии\n❓ /help — Показать справку";
+            public const string AdminCommandsList = "\n**🧙 КОМАНДЫ МАСТЕРА:**\n/group — Создать новую группу\n/delgroup — Удалить группу\n/request — Запросить у игроков свободное время\n/plan — Найти идеальное время для игры\n/recommendations — Показать рекомендации (если нет пересечений)\n/cancel — Отменить активную сессию планирования";
+            public const string ImportantNote = "\n**⚠️ ВАЖНО:** Для подтверждения сессии требуется 75% игроков + ВСЕ администраторы";
+            public const string InDevelopment = "\n**🔮 В РАЗРАБОТКЕ:**\n⏳ _Авто-напоминания за 5ч и 1ч до игры_\n📊 _Статус заполнения времени группой_";
+            public const string MembersPrompt = "👥 **ПРОСМОТР УЧАСТНИКОВ**\nВыберите группу, чтобы увидеть её состав:";
             public const string NoGroupsForMembers = "❌ Групп не найдено.";
-            public const string SessionInfoPrompt = "📅 **Информация о сессии**\nВыберите группу:";
+            public const string SessionInfoPrompt = "📅 **ИНФОРМАЦИЯ О СЕССИИ**\nВыберите группу:";
             public const string NoGroupsForSessionInfo = "❌ У вас нет групп с запланированными сессиями.";
         }
         /// <summary>
@@ -226,7 +226,7 @@ namespace TgDataPlanner.Configuration
         public static class ErrorMessages
         {
             public const string GroupNotFound = "⚠️ Группа не найдена";
-            public const string PlayerNotFound = "⚠️ Пользователь не найден";
+            public const string PlayerNotFound = "⚠️ Герой не найден";
             public const string DateParseError = "⚠️ Ошибка формата даты";
             public const string TimeParseError = "⚠️ Ошибка парсинга даты сессии из callback: {0}";
             public const string CallbackFormatError = "⚠️ Ошибка обработки";
@@ -245,31 +245,31 @@ namespace TgDataPlanner.Configuration
         public static class CommandMessages
         {
             // Создание группы
-            public const string CreateGroupPrompt = "📝 **Создание новой группы**\nВведите название для вашей D&D кампании:";
+            public const string CreateGroupPrompt = "📝 **СОЗДАНИЕ НОВОЙ ГРУППЫ**\n\nВведите название для вашей D&D кампании:\n(Например: \"Проклятие Страда\", \"Восхождение Драконьего Копья\")";
             public const string GroupNameEmptyError = "⚠️ Название не может быть пустым. Введите ещё раз:";
             public const string NoGroupsToDelete = "ℹ️ Групп для удаления пока нет.";
-            public const string DeleteGroupPrompt = "⚠️ **Удаление группы**\nВыберите группу, которую хотите расформировать:";
+            public const string DeleteGroupPrompt = "⚠️ **УДАЛЕНИЕ ГРУППЫ**\n\nВыберите группу, которую хотите расформировать:\n(Это действие необратимо!)";
             // Вступление в группу
             public const string NoGroupsToJoin = "❌ Групп пока нет. Мастер должен создать их через /group";
-            public const string JoinGroupPrompt = "📜 **Выберите группу для вступления:**";
+            public const string JoinGroupPrompt = "📜 **ВЫБЕРИТЕ ГРУППУ ДЛЯ ВСТУПЛЕНИЯ**\n\nК какому отряду ты хочешь присоединиться?";
             // Выход из группы
-            public const string NotInAnyGroup = "🛡 Вы пока не состоите ни в одной группе.";
-            public const string LeaveGroupPrompt = "🏃 **Выход из группы**\nВыберите группу, которую хотите покинуть:";
+            public const string NotInAnyGroup = "🛡 Ты пока не состоишь ни в одной группе.";
+            public const string LeaveGroupPrompt = "🏃 **ВЫХОД ИЗ ГРУППЫ**\n\nВыберите группу, которую хотите покинуть:";
             // Часовой пояс
-            public const string TimeZonePrompt = "🌍 **Настройка часового пояса**\nВыберите ваше смещение относительно UTC (например, для Москвы это +3):";
+            public const string TimeZonePrompt = "🌍 **НАСТРОЙКА ЧАСОВОГО ПОЯСА**\n\nВыберите ваше смещение относительно UTC:\n(Например, для Москвы это +3, для Нью-Йорка -5)";
             // Свободное время
-            public const string FreeTimePrompt = "📅 **Ваш личный календарь**\nВыберите дату, чтобы отметить свободные часы:";
-            public const string FreeTimeSentToPM = "📩 {0}, отправил календарь вам в личку!";
-            public const string FreeTimePmFailed = "❌ {0}, я не могу написать вам. Пожалуйста, начните со мной диалог в личке.";
+            public const string FreeTimePrompt = "📅 **ТВОЙ ЛИЧНЫЙ ГРИМУАР ВРЕМЕНИ**\n\nВыберите дату, чтобы отметить свободные часы:";
+            public const string FreeTimeSentToPM = "📩 {0}, я отправил тебе личный гримуар в сообщения!";
+            public const string FreeTimePmFailed = "❌ {0}, я не могу написать тебе. Пожалуйста, начни со мной диалог в личных сообщениях.";
             // Запрос свободного времени
             public const string NoGroupsForRequest = "❌ Сначала создайте группу через /group";
-            public const string RequestFreeTimePrompt = "🎯 **Запрос на свободное время**\nВыберите группу, для которой нужно выполнить запрос:";
+            public const string RequestFreeTimePrompt = "🎯 **ЗАПРОС СВОБОДНОГО ВРЕМЕНИ**\n\nВыберите группу, для которой нужно собрать расписание героев:";
             // Планирование
             public const string NoGroupsForPlan = "❌ Сначала создайте группу через /group";
-            public const string PlanPrompt = "🎯 **Запуск планирования**\nВыберите группу, для которой нужно найти время:";
+            public const string PlanPrompt = "🎯 **ЗАПУСК ПЛАНИРОВАНИЯ**\n\nВыберите группу, для которой нужно найти идеальное время для приключения:";
             // Статус
             public const string NoGroupsForStatus = "📋 Вы не состоите ни в одной группе.";
-            public const string StatusTitle = "📊 **Ваш статус в группах:**\n";
+            public const string StatusTitle = "📊 **ТВОЙ СТАТУС В ГРУППАХ:**\n";
             public const string StatusSessionLine = "   📅 Сессия: {0}";
             public const string StatusStatusLine = "   ✅ Статус: {0}";
             public const string StatusConfirmedLine = "   👍 Подтвердили: {0}/{1}";
@@ -278,18 +278,18 @@ namespace TgDataPlanner.Configuration
             // Рекомендации
             public const string AdminOnlyRecommendations = "🔒 Только Мастер может запрашивать рекомендации.";
             public const string NoGroupsForRecommendations = "❌ Групп не найдено.";
-            public const string RecommendationsPrompt = "📊 **Получить рекомендации**\nВыберите группу:";
+            public const string RecommendationsPrompt = "📊 **ПОЛУЧИТЬ РЕКОМЕНДАЦИИ**\n\nВыберите группу:";
             // Отмена сессии
             public const string AdminOnlyCancel = "🔒 Только Мастер может отменять сессии.";
             public const string NoActiveSessions = "ℹ️ Нет активных сессий для отмены.";
-            public const string CancelSessionPrompt = "⚠️ **Отмена сессии**\nВыберите группу для отмены:";
+            public const string CancelSessionPrompt = "⚠️ **ОТМЕНА СЕССИИ**\n\nВыберите группу для отмены:";
             // Участники группы
             public const string AdminOnlyViewMembers = "🔒 Только Мастер может просматривать состав группы.";
             public const string NoGroupsForMembers = "❌ Групп не найдено.";
-            public const string MembersPrompt = "👥 **Просмотр участников**\nВыберите группу:";
+            public const string MembersPrompt = "👥 **ПРОСМОТР УЧАСТНИКОВ**\n\nВыберите группу:";
             // Информация о сессии
             public const string NoGroupsForSessionInfo = "❌ У вас нет групп с запланированными сессиями.";
-            public const string SessionInfoPrompt = "📅 **Информация о сессии**\nВыберите группу:";
+            public const string SessionInfoPrompt = "📅 **ИНФОРМАЦИЯ О СЕССИИ**\n\nВыберите группу:";
         }
         #endregion
         #region Сообщения обработчика callback-запросов (CallbackHandler)
@@ -362,8 +362,8 @@ namespace TgDataPlanner.Configuration
             public const string SessionConfirmationText = "✅ Сессия для **{0}** назначена на {1}";
             public const string RecommendationSelectionText = "✅ Выбран вариант #{0}: {1}";
             public const string RecommendationsAdminText = "📊 **Рекомендации для {0}**\n✅ Выбран лучший вариант: **{1}**\n👥 Участвуют: {2}/{3}\n✅ Свободны: {4}";
-            public const string SessionCancelledAdminText = "⚠️ **Сессия отменена**\n👥 Группа: **{0}**\n✅ Подтвердили: {1}/{2} ({3:P0})\n🎯 Требуется: {4:P0}\nЗапустить повторный запрос свободного времени?";
-            public const string PlanningResultsTitle = "🗓 **Найденные окна (Ваше время):**\n";
+            public const string SessionCancelledAdminText = "⚠️ **СЕССИЯ ОТМЕНЕНА**\n👥 Группа: **{0}**\n✅ Подтвердили: {1}/{2} ({3:P0})\n🎯 Требуется: {4:P0}\n\nЗапустить повторный запрос свободного времени?";
+            public const string PlanningResultsTitle = "🗓 **НАЙДЕННЫЕ ОКНА (Ваше время):**\n";
             public const string PlanningResultLine = "🔹 {0}\n";
             public const string RecommendationOptionLine = "#{0}. 🕒 {1}\n👥 {2}/{3} игроков\n✅ Свободны: {4}\n";
             public const string AdminsCannotAttend = "❌ **Администраторы не могут:** {0}";
