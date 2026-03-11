@@ -17,13 +17,12 @@ namespace TgDataPlanner.Telegram.Handlers;
 /// <summary>
 /// Обработчик текстовых команд Telegram Bot.
 /// Маршрутизирует входящие сообщения к соответствующим методам обработки команд.
-/// Делегирует бизнес-логику сервисам планирования и рекомендаций.
+/// Делегирует бизнес-логику сервисам.
 /// </summary>
 public class CommandHandler : BaseHandler
 {
-    private readonly SessionPlanningService _planningService;
-    private readonly IRecommendationService _recommendationService;
     private readonly ILogger<CommandHandler> _logger;
+
     /// <summary>
     /// Инициализирует новый экземпляр <see cref="CommandHandler"/>.
     /// </summary>
@@ -33,51 +32,50 @@ public class CommandHandler : BaseHandler
     /// <param name="db">Контекст базы данных</param>
     /// <param name="userService">Сервис управления пользователями.</param>
     /// <param name="schedulingService">Сервис расписания.</param>
-    /// <param name="planningService">Сервис планирования игр.</param>
-    /// <param name="recommendationService">Сервис рекомендаций.</param>
     public CommandHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
         ILogger<CommandHandler> logger,
         AppDbContext db,
         UserService userService,
-        SchedulingService schedulingService,
-        SessionPlanningService planningService,
-        IRecommendationService recommendationService)
+        SchedulingService schedulingService)
         : base(config, botClient, logger, db, userService, schedulingService)
     {
-        _planningService = planningService ?? throw new ArgumentNullException(nameof(planningService));
-        _recommendationService = recommendationService ?? throw new ArgumentNullException(nameof(recommendationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
     /// <summary>
     /// Обрабатывает входящее текстовое сообщение.
     /// </summary>
     /// <param name="message">Объект сообщения Telegram.</param>
     /// <param name="ct">Токен отмены операции.</param>
-    /// <returns>Задача выполнения обработки.</returns>
     public async Task HandleAsync(Message message, CancellationToken ct)
     {
         if (message.Text is null)
         {
-            _logger.LogDebug("Получено сообщение без текста от пользователя {UserId}", message.From?.Id);
+            _logger.LogDebug(BotConstants.SystemMessages.CommandNoText, message.From?.Id);
             return;
         }
+
         var userId = message.From?.Id ?? 0;
         var text = message.Text.Trim().ToLowerInvariant();
         _logger.LogDebug(
-            "Обработка команды '{Command}' от пользователя {UserId} в чате {ChatId}",
+            BotConstants.SystemMessages.CommandProcessing,
             text,
             userId,
             message.Chat.Id);
+
         var player = await GetOrCreatePlayerAsync(userId, message.From?.Username, ct);
         await TouchPlayerActivityAsync(userId, ct);
+
         if (await HandleStateBasedInputAsync(message, player, text, ct))
         {
             return;
         }
+
         await RouteCommandAsync(message, player, text, userId, ct);
     }
+
     /// <summary>
     /// Обрабатывает ввод, зависящий от текущего состояния игрока.
     /// </summary>
@@ -90,9 +88,11 @@ public class CommandHandler : BaseHandler
     {
         if (player.CurrentState != PlayerState.AwaitingGroupName)
             return false;
+
         await FinalizeGroupCreationAsync(message, player, text, ct);
         return true;
     }
+
     /// <summary>
     /// Маршрутизирует команду к соответствующему обработчику.
     /// </summary>
@@ -142,11 +142,10 @@ public class CommandHandler : BaseHandler
                 await HandleCancelCommandAsync(message, player, ct);
                 break;
             default:
-                _logger.LogDebug("Неизвестная команда '{Command}' от пользователя {UserId}", text, userId);
+                _logger.LogDebug(BotConstants.SystemMessages.CommandUnknown, text, userId);
                 break;
         }
     }
-#region Обработчики команд
 
     /// <summary>
     /// Обрабатывает команду /start.
@@ -157,6 +156,7 @@ public class CommandHandler : BaseHandler
         var welcomeText = isAdmin
             ? BotConstants.PlayerMessages.WelcomeAdmin
             : BotConstants.PlayerMessages.WelcomePlayer;
+
         var commands = new System.Text.StringBuilder();
         commands.AppendLine(BotConstants.Commands.CommandsList);
         if (isAdmin)
@@ -165,8 +165,10 @@ public class CommandHandler : BaseHandler
             commands.AppendLine(BotConstants.Commands.ImportantNote);
         }
         commands.AppendLine(BotConstants.Commands.InDevelopment);
+
         await SendToGroupChatAsync(message.Chat.Id, welcomeText + commands, ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /group (создание группы).
     /// </summary>
@@ -174,20 +176,23 @@ public class CommandHandler : BaseHandler
     {
         if (!IsAdmin(userId))
         {
-            _logger.LogWarning("Пользователь {UserId} без прав попытался создать группу", userId);
+            _logger.LogWarning(BotConstants.SystemMessages.AdminNoPermissionCreate, userId);
             return;
         }
+
         await SetPlayerStateAsync(userId, PlayerState.AwaitingGroupName, ct);
         var keyboard = new InlineKeyboardMarkup((InlineKeyboardButton[])
         [
             InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonCancel, BotConstants.CallbackPrefixes.CancelAction)
         ]);
+
         await SendToGroupChatAsync(
             message.Chat.Id,
             BotConstants.CommandMessages.CreateGroupPrompt,
             keyboard,
             ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /delgroup (удаление группы).
     /// </summary>
@@ -195,20 +200,24 @@ public class CommandHandler : BaseHandler
     {
         if (!IsAdmin(userId))
             return;
+
         var groups = await Db.Groups.ToListAsync(ct);
         if (groups.Count == 0)
         {
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.NoGroupsToDelete, ct);
             return;
         }
+
         var buttons = groups.Select(g =>
-            (List<InlineKeyboardButton>) [InlineKeyboardButton.WithCallbackData($"🗑 {g.Name}", $"{BotConstants.CallbackPrefixes.ConfirmDeleteGroup}{g.Id}")]);
+            (List<InlineKeyboardButton>)[InlineKeyboardButton.WithCallbackData($"🗑 {g.Name}", $"{BotConstants.CallbackPrefixes.ConfirmDeleteGroup}{g.Id}")]);
+
         await SendToGroupChatAsync(
             message.Chat.Id,
             BotConstants.CommandMessages.DeleteGroupPrompt,
             new InlineKeyboardMarkup(buttons),
             ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /join (вступление в группу).
     /// </summary>
@@ -220,18 +229,21 @@ public class CommandHandler : BaseHandler
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.NoGroupsToJoin, ct);
             return;
         }
+
         var buttons = groups.Select(g =>
         {
             if (g.Name != null)
-                return (List<InlineKeyboardButton>) [InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.JoinGroup}{g.Id}")];
+                return (List<InlineKeyboardButton>)[InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.JoinGroup}{g.Id}")];
             return null;
         });
+
         await SendToGroupChatAsync(
             message.Chat.Id,
             BotConstants.CommandMessages.JoinGroupPrompt,
             new InlineKeyboardMarkup(buttons!),
             ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /leave (выход из группы).
     /// </summary>
@@ -242,14 +254,17 @@ public class CommandHandler : BaseHandler
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.NotInAnyGroup, ct);
             return;
         }
+
         var buttons = player.Groups.Select(g =>
-            (List<InlineKeyboardButton>) [InlineKeyboardButton.WithCallbackData($"🚪 Покинуть {g.Name}", $"{BotConstants.CallbackPrefixes.LeaveGroup}{g.Id}")]);
+            (List<InlineKeyboardButton>)[InlineKeyboardButton.WithCallbackData($"🚪 Покинуть {g.Name}", $"{BotConstants.CallbackPrefixes.LeaveGroup}{g.Id}")]);
+
         await SendToGroupChatAsync(
             message.Chat.Id,
             BotConstants.CommandMessages.LeaveGroupPrompt,
             new InlineKeyboardMarkup(buttons),
             ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /timezone (настройка часового пояса).
     /// </summary>
@@ -272,12 +287,14 @@ public class CommandHandler : BaseHandler
                 InlineKeyboardButton.WithCallbackData("UTC +7", $"{BotConstants.CallbackPrefixes.SetTimeZone}7")
             ]
         ]);
+
         await SendToGroupChatAsync(
             message.Chat.Id,
             BotConstants.CommandMessages.TimeZonePrompt,
             keyboard,
             ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /free (отметка свободного времени).
     /// </summary>
@@ -285,6 +302,7 @@ public class CommandHandler : BaseHandler
     {
         if (message.From is null)
             return;
+
         try
         {
             await SendToUserAsync(
@@ -292,6 +310,7 @@ public class CommandHandler : BaseHandler
                 BotConstants.CommandMessages.FreeTimePrompt,
                 AvailabilityMenu.GetDateCalendar(player.TimeZoneOffset),
                 ct);
+
             if (message.Chat.Type != ChatType.Private)
             {
                 await SendToGroupChatAsync(
@@ -312,6 +331,7 @@ public class CommandHandler : BaseHandler
                 ct);
         }
     }
+
     /// <summary>
     /// Обрабатывает команду /request (запрос свободного времени у игроков).
     /// </summary>
@@ -319,24 +339,28 @@ public class CommandHandler : BaseHandler
     {
         if (!IsAdmin(player.TelegramId))
             return;
+
         var groups = await Db.Groups.ToListAsync(ct);
         if (groups.Count == 0)
         {
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.NoGroupsForRequest, ct);
             return;
         }
+
         var buttons = groups.Select(g =>
         {
             if (g.Name != null)
-                return (List<InlineKeyboardButton>) [InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.StartRequest}{g.Id}")];
+                return (List<InlineKeyboardButton>)[InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.StartRequest}{g.Id}")];
             return null;
         });
+
         await SendToGroupChatAsync(
             message.Chat.Id,
             BotConstants.CommandMessages.RequestFreeTimePrompt,
             new InlineKeyboardMarkup(buttons!),
             ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /plan (поиск свободного времени для группы).
     /// </summary>
@@ -344,24 +368,28 @@ public class CommandHandler : BaseHandler
     {
         if (!IsAdmin(userId))
             return;
+
         var groups = await Db.Groups.ToListAsync(ct);
         if (groups.Count == 0)
         {
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.NoGroupsForPlan, ct);
             return;
         }
+
         var buttons = groups.Select(g =>
         {
             if (g.Name != null)
-                return (List<InlineKeyboardButton>) [InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.StartPlan}{g.Id}")];
+                return (List<InlineKeyboardButton>)[InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.StartPlan}{g.Id}")];
             return null;
         });
+
         await SendToGroupChatAsync(
             message.Chat.Id,
             BotConstants.CommandMessages.PlanPrompt,
             new InlineKeyboardMarkup(buttons!),
             ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /status (проверка статуса планирования).
     /// </summary>
@@ -373,6 +401,7 @@ public class CommandHandler : BaseHandler
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.NoGroupsForStatus, ct);
             return;
         }
+
         var statusText = new System.Text.StringBuilder();
         statusText.AppendLine(BotConstants.CommandMessages.StatusTitle);
         foreach (var group in groups)
@@ -382,6 +411,7 @@ public class CommandHandler : BaseHandler
                 .FirstOrDefaultAsync(g => g.Id == group.Id, ct);
             if (freshGroup == null)
                 continue;
+
             statusText.AppendLine($"👥 **{freshGroup.Name}**");
             if (freshGroup.CurrentSessionUtc.HasValue)
             {
@@ -397,8 +427,10 @@ public class CommandHandler : BaseHandler
             }
             statusText.AppendLine();
         }
+
         await SendToGroupChatAsync(message.Chat.Id, statusText.ToString(), ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /recommendations (ручной запуск рекомендаций).
     /// </summary>
@@ -409,24 +441,28 @@ public class CommandHandler : BaseHandler
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.AdminOnlyRecommendations, ct);
             return;
         }
+
         var groups = await Db.Groups.ToListAsync(ct);
         if (groups.Count == 0)
         {
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.NoGroupsForRecommendations, ct);
             return;
         }
+
         var buttons = groups.Select(g =>
         {
             if (g.Name != null)
-                return (List<InlineKeyboardButton>) [InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.StartPlan}{g.Id}")];
+                return (List<InlineKeyboardButton>)[InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.StartPlan}{g.Id}")];
             return null;
         });
+
         await SendToGroupChatAsync(
             message.Chat.Id,
             BotConstants.CommandMessages.RecommendationsPrompt,
             new InlineKeyboardMarkup(buttons!),
             ct);
     }
+
     /// <summary>
     /// Обрабатывает команду /cancel (отмена сессии планирования).
     /// </summary>
@@ -437,6 +473,7 @@ public class CommandHandler : BaseHandler
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.AdminOnlyCancel, ct);
             return;
         }
+
         var groups = await Db.Groups
             .Where(g => g.SessionStatus == SessionStatus.Pending)
             .ToListAsync(ct);
@@ -445,17 +482,16 @@ public class CommandHandler : BaseHandler
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.NoActiveSessions, ct);
             return;
         }
+
         var buttons = groups.Select(g =>
-            (List<InlineKeyboardButton>) [InlineKeyboardButton.WithCallbackData($"❌ {g.Name}", $"{BotConstants.CallbackPrefixes.ConfirmDeleteGroup}{g.Id}")]);
+            (List<InlineKeyboardButton>)[InlineKeyboardButton.WithCallbackData($"❌ {g.Name}", $"{BotConstants.CallbackPrefixes.ConfirmDeleteGroup}{g.Id}")]);
+
         await SendToGroupChatAsync(
             message.Chat.Id,
             BotConstants.CommandMessages.CancelSessionPrompt,
             new InlineKeyboardMarkup(buttons),
             ct);
     }
-
-#endregion
-#region Вспомогательные методы
 
     /// <summary>
     /// Завершает создание группы после ввода названия.
@@ -467,32 +503,39 @@ public class CommandHandler : BaseHandler
             await SendToGroupChatAsync(message.Chat.Id, BotConstants.CommandMessages.GroupNameEmptyError, ct);
             return;
         }
+
         var newGroup = new Group
         {
             Name = groupName.Trim(),
             TelegramChatId = message.Chat.Id,
             CreatedAt = DateTime.UtcNow
         };
+
         await SetPlayerStateAsync(player.TelegramId, PlayerState.Idle, ct);
         Db.Groups.Add(newGroup);
         await Db.SaveChangesAsync(ct);
+
         _logger.LogInformation(
-            "Админ {AdminId} создал группу '{GroupName}' в чате {ChatId}",
+            BotConstants.SystemMessages.GroupCreatedLog,
             player.TelegramId,
             groupName,
             message.Chat.Id);
+
         await SendToGroupChatAsync(message.Chat.Id, string.Format(BotConstants.AdminMessages.GroupCreated, groupName), ct);
     }
+
     /// <summary>
     /// Получает список групп для отображения в меню.
     /// </summary>
     protected async Task<List<Group>> GetGroupsAsync(CancellationToken ct) =>
         await Db.Groups.ToListAsync(ct);
+
     /// <summary>
     /// Получает группу по идентификатору.
     /// </summary>
     private async Task<Group?> GetGroupAsync(int groupId, CancellationToken ct) =>
         await Db.Groups.FindAsync([groupId], ct);
+
     /// <summary>
     /// Создаёт новую группу в базе данных.
     /// </summary>
@@ -503,6 +546,7 @@ public class CommandHandler : BaseHandler
         await Db.SaveChangesAsync(ct);
         return group;
     }
+
     /// <summary>
     /// Удаляет группу из базы данных.
     /// </summary>
@@ -511,10 +555,9 @@ public class CommandHandler : BaseHandler
         var group = await GetGroupAsync(groupId, ct);
         if (group is null)
             return false;
+
         Db.Groups.Remove(group);
         await Db.SaveChangesAsync(ct);
         return true;
     }
-
-#endregion
 }

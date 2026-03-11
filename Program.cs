@@ -8,6 +8,7 @@ using TgDataPlanner.Data;
 using TgDataPlanner.Services;
 using TgDataPlanner.Telegram;
 using TgDataPlanner.Telegram.Handlers;
+using TgDataPlanner.Configuration;
 
 namespace TgDataPlanner;
 
@@ -93,7 +94,7 @@ public static class Program
         services.AddSingleton<ITelegramBotClient>(sp =>
         {
             var token = context.Configuration[$"{BotConfigSection}:{BotTokenKey}"]
-                ?? throw new InvalidOperationException($"Токен бота не найден в секции '{BotConfigSection}'");
+                ?? throw new InvalidOperationException(string.Format(BotConstants.SystemMessages.TokenNotFound, BotConfigSection, BotTokenKey));
             return new TelegramBotClient(token);
         });
 
@@ -115,21 +116,27 @@ public static class Program
         });
 
         // 4. Регистрация бизнес-сервисов (Scoped — зависят от DbContext)
-        // ВАЖНО: регистрировать ДО хендлеров, которые от них зависят
         services.AddScoped<UserService>();
         services.AddScoped<SchedulingService>();
-        // 4.1. Регистрация сервиса рекомендаций и планирования
         services.AddScoped<IRecommendationService, RecommendationService>();
         services.AddScoped<SessionPlanningService>();
+        services.AddScoped<RsvpService>();
+        services.AddScoped<GroupNotificationService>(sp =>
+        {
+            var botClient = sp.GetRequiredService<ITelegramBotClient>();
+            var logger = sp.GetRequiredService<ILogger<GroupNotificationService>>();
+            var adminIds = ParseAdminIds(context.Configuration);
+            var mainChatId = ParseMainChatId(context.Configuration);
+            return new GroupNotificationService(botClient, logger, adminIds, mainChatId);
+        });
+
         // 5. Регистрация обработчиков команд (Scoped — создаются на каждое обновление)
         services.AddScoped<CommandHandler>();
         services.AddScoped<CallbackHandler>();
         services.AddScoped<UpdateHandler>();
+
         // 6. Регистрация фоновых служб (Singleton — живут весь жизненный цикл хоста)
         services.AddHostedService<BotBackgroundService>();
-        // services.AddHostedService<ReminderService>(); // TODO: реализовать сервис напоминаний
-        // 7. Дополнительные сервисы (опционально)
-        // services.AddHttpClient(); // для будущих внешних API-запросов
     }
 
     /// <summary>
@@ -145,19 +152,48 @@ public static class Program
         if (string.IsNullOrWhiteSpace(token))
         {
             throw new InvalidOperationException(
-                $"Обязательная настройка '{BotConfigSection}:{BotTokenKey}' не найдена. " +
-                $"Добавьте токен бота в appsettings.json или переменные окружения.");
+                string.Format(BotConstants.SystemMessages.TokenNotFound, BotConfigSection, BotTokenKey));
         }
 
         if (string.IsNullOrWhiteSpace(mainChatId))
         {
-            Console.WriteLine($"⚠️  Предупреждение: '{BotConfigSection}:{MainChatIdKey}' не настроен. Системные уведомления отключены.");
+            Console.WriteLine(string.Format(BotConstants.SystemMessages.WarningMainChatIdNotConfigured, BotConfigSection, MainChatIdKey));
         }
 
         if (string.IsNullOrWhiteSpace(adminIds))
         {
-            Console.WriteLine($"⚠️  Предупреждение: '{BotConfigSection}:{AdminIdsKey}' не настроен. Админ-команды будут недоступны.");
+            Console.WriteLine(string.Format(BotConstants.SystemMessages.WarningAdminIdsNotConfigured, BotConfigSection, AdminIdsKey));
         }
+    }
+
+    /// <summary>
+    /// Парсит список идентификаторов администраторов из конфигурации.
+    /// </summary>
+    private static List<long> ParseAdminIds(IConfiguration configuration)
+    {
+        var adminIds = new List<long>();
+        var adminIdsConfig = configuration[$"{BotConfigSection}:{AdminIdsKey}"];
+        if (!string.IsNullOrWhiteSpace(adminIdsConfig))
+        {
+            var adminIdStrings = adminIdsConfig.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var adminIdString in adminIdStrings)
+            {
+                if (long.TryParse(adminIdString.Trim(), out var adminId))
+                {
+                    adminIds.Add(adminId);
+                }
+            }
+        }
+        return adminIds;
+    }
+
+    /// <summary>
+    /// Парсит идентификатор основного чата из конфигурации.
+    /// </summary>
+    private static long ParseMainChatId(IConfiguration configuration)
+    {
+        var mainChatIdConfig = configuration[$"{BotConfigSection}:{MainChatIdKey}"];
+        return long.TryParse(mainChatIdConfig, out var mainChatId) ? mainChatId : 0;
     }
 
     /// <summary>
@@ -171,35 +207,36 @@ public static class Program
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         try
         {
-            logger.LogInformation("Инициализация базы данных...");
+            logger.LogInformation(BotConstants.SystemMessages.DatabaseInitializing);
             // Проверка возможности подключения
             var canConnect = await dbContext.Database.CanConnectAsync();
             if (!canConnect)
             {
-                logger.LogWarning("Не удалось подключиться к БД. Попытка создания...");
+                logger.LogWarning(BotConstants.SystemMessages.DatabaseConnectFailed);
             }
+
             // Применение миграций или создание БД
             var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
             var migrations = pendingMigrations as string[] ?? pendingMigrations.ToArray();
             if (migrations.Length != 0)
             {
-                logger.LogInformation("Применение {Count} миграций: {Migrations}",
+                logger.LogInformation(BotConstants.SystemMessages.ApplyingMigrations,
                     migrations.Length,
                     string.Join(", ", migrations));
                 await dbContext.Database.MigrateAsync();
-                logger.LogInformation("Миграции успешно применены");
+                logger.LogInformation(BotConstants.SystemMessages.MigrationsApplied);
             }
             else
             {
                 var created = await dbContext.Database.EnsureCreatedAsync();
                 logger.LogInformation(created
-                    ? "База данных создана с нуля"
-                    : "Схема базы данных актуальна");
+                    ? BotConstants.SystemMessages.DatabaseCreatedFromScratch
+                    : BotConstants.SystemMessages.DatabaseSchemaActual);
             }
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Критическая ошибка при инициализации базы данных");
+            logger.LogError(ex, BotConstants.SystemMessages.DatabaseInitError);
             throw;
         }
     }
@@ -217,12 +254,12 @@ public static class Program
         {
             // Проверка валидности токена через API Telegram
             var botInfo = await botClient.GetMe();
-            logger.LogInformation("✅ Бот @{Username} (ID: {BotId}) успешно аутентифицирован",
+            logger.LogInformation(BotConstants.SystemMessages.BotAuthenticated,
                 botInfo.Username, botInfo.Id);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "❌ Не удалось аутентифицировать бота. Проверьте токен и подключение к интернету");
+            logger.LogError(ex, BotConstants.SystemMessages.BotAuthFailed);
             throw;
         }
     }
@@ -241,7 +278,7 @@ public static class Program
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
-            Console.WriteLine($"📁 Создана директория: {directory}");
+            Console.WriteLine(string.Format(BotConstants.SystemMessages.DirectoryCreated, directory));
         }
         return $"Data Source={absolutePath};Cache=Shared;Foreign Keys=True;";
     }

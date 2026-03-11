@@ -1,736 +1,297 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TgDataPlanner.Common;
+using TgDataPlanner.Configuration;
+using TgDataPlanner.Data;
+using TgDataPlanner.Data.Entities;
 
 namespace TgDataPlanner.Services;
 
 /// <summary>
-/// Статус процесса планирования сессии
-/// </summary>
-public enum PlanningStatus
-{
-    /// <summary>
-    /// Ожидание заполнения доступности всеми игроками
-    /// </summary>
-    WaitingForAvailability,
-
-    /// <summary>
-    /// Найдено прямое пересечение, ожидание подтверждения
-    /// </summary>
-    WaitingForConfirmation,
-
-    /// <summary>
-    /// Прямое пересечение не найдено, отправлены рекомендации
-    /// </summary>
-    RecommendationsSent,
-
-    /// <summary>
-    /// Сессия успешно запланирована
-    /// </summary>
-    Scheduled,
-
-    /// <summary>
-    /// Планирование отменено
-    /// </summary>
-    Cancelled
-}
-
-/// <summary>
-/// Информация о процессе планирования сессии
-/// </summary>
-public class PlanningSession
-{
-    /// <summary>
-    /// Уникальный идентификатор сессии планирования
-    /// </summary>
-    public long SessionId { get; set; }
-
-    /// <summary>
-    /// Идентификатор чата Telegram
-    /// </summary>
-    public long ChatId { get; set; }
-
-    /// <summary>
-    /// Идентификатор пользователя, создавшего запрос (Админ)
-    /// </summary>
-    public long RequestedBy { get; set; }
-
-    /// <summary>
-    /// Список участников сессии
-    /// </summary>
-    public List<PlanningParticipant> Participants { get; set; } = new List<PlanningParticipant>();
-
-    /// <summary>
-    /// Требуемая длительность сессии в часах
-    /// </summary>
-    public double SessionDurationHours { get; set; }
-
-    /// <summary>
-    /// Текущий статус планирования
-    /// </summary>
-    public PlanningStatus Status { get; set; }
-
-    /// <summary>
-    /// Найденное время начала сессии (если найдено)
-    /// </summary>
-    public DateTime? ScheduledStartTime { get; set; }
-
-    /// <summary>
-    /// Найденное время окончания сессии (если найдено)
-    /// </summary>
-    public DateTime? ScheduledEndTime { get; set; }
-
-    /// <summary>
-    /// Результат рекомендаций (если прямое пересечение не найдено)
-    /// </summary>
-    public RecommendationResult RecommendationResult { get; set; }
-
-    /// <summary>
-    /// Текущий выбранный вариант рекомендации (индекс в списке)
-    /// </summary>
-    public int SelectedRecommendationIndex { get; set; } = -1;
-
-    /// <summary>
-    /// Количество игроков, подтвердивших выбранное время
-    /// </summary>
-    public int ConfirmationCount { get; set; }
-
-    /// <summary>
-    /// Дата и время создания сессии планирования
-    /// </summary>
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-    /// <summary>
-    /// Дата и время последнего обновления
-    /// </summary>
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-    /// <summary>
-    /// Возвращает количество игроков, заполнивших доступность
-    /// </summary>
-    public int PlayersWithAvailabilityCount => Participants.Count(p => p.AvailabilitySlots.Count > 0);
-
-    /// <summary>
-    /// Возвращает общее количество игроков
-    /// </summary>
-    public int TotalPlayersCount => Participants.Count;
-
-    /// <summary>
-    /// Проверяет, все ли игроки заполнили доступность
-    /// </summary>
-    public bool AllPlayersFilledAvailability => PlayersWithAvailabilityCount == TotalPlayersCount;
-
-    /// <summary>
-    /// Проверяет, достигнут ли порог согласий (75%)
-    /// </summary>
-    public bool HasEnoughConfirmations => TotalPlayersCount > 0 
-        && (double)ConfirmationCount / TotalPlayersCount >= 0.75;
-
-    /// <summary>
-    /// Процент игроков, подтвердивших время
-    /// </summary>
-    public double ConfirmationPercentage => TotalPlayersCount > 0
-        ? (double)ConfirmationCount / TotalPlayersCount * 100
-        : 0;
-}
-
-/// <summary>
-/// Участник сессии планирования
-/// </summary>
-public class PlanningParticipant
-{
-    /// <summary>
-    /// Идентификатор игрока (Telegram ChatId или UserId)
-    /// </summary>
-    public long PlayerId { get; set; }
-
-    /// <summary>
-    /// Имя игрока
-    /// </summary>
-    public string PlayerName { get; set; }
-
-    /// <summary>
-    /// Список доступных временных слотов игрока
-    /// </summary>
-    public List<TimeSlot> AvailabilitySlots { get; set; } = new List<TimeSlot>();
-
-    /// <summary>
-    /// Предпочтительное время начала (если указано)
-    /// </summary>
-    public DateTime? PreferredStartTime { get; set; }
-
-    /// <summary>
-    /// Предпочтительное время окончания (если указано)
-    /// </summary>
-    public DateTime? PreferredEndTime { get; set; }
-
-    /// <summary>
-    /// Подтвердил ли игрок выбранное время
-    /// </summary>
-    public bool HasConfirmed { get; set; }
-
-    /// <summary>
-    /// Дата и время последнего обновления доступности
-    /// </summary>
-    public DateTime LastAvailabilityUpdate { get; set; }
-}
-
-/// <summary>
-/// Результат попытки планирования сессии
-/// </summary>
-public class PlanningResult
-{
-    /// <summary>
-    /// Успешно ли выполнено планирование
-    /// </summary>
-    public bool Success { get; set; }
-
-    /// <summary>
-    /// Статус планирования
-    /// </summary>
-    public PlanningStatus Status { get; set; }
-
-    /// <summary>
-    /// Сообщение для пользователя
-    /// </summary>
-    public string Message { get; set; }
-
-    /// <summary>
-    /// Найденное время начала (если найдено)
-    /// </summary>
-    public DateTime? ScheduledStartTime { get; set; }
-
-    /// <summary>
-    /// Найденное время окончания (если найдено)
-    /// </summary>
-    public DateTime? ScheduledEndTime { get; set; }
-
-    /// <summary>
-    /// Список рекомендаций (если прямое пересечение не найдено)
-    /// </summary>
-    public List<RecommendationOption> Recommendations { get; set; } = new List<RecommendationOption>();
-}
-
-/// <summary>
 /// Сервис планирования игровых сессий.
-/// Управляет процессом сбора доступности, поиска пересечений и работы с рекомендациями.
+/// Управляет процессом поиска свободных окон, авто-планирования и работы с рекомендациями.
 /// </summary>
 public class SessionPlanningService
 {
+    private readonly AppDbContext _db;
+    private readonly ILogger<SessionPlanningService> _logger;
+    private readonly SchedulingService _schedulingService;
     private readonly IRecommendationService _recommendationService;
-    private readonly Dictionary<long, PlanningSession> _planningSessions;
-    private readonly object _lock = new object();
 
-    public SessionPlanningService(IRecommendationService recommendationService)
+    /// <summary>
+    /// Инициализирует новый экземпляр <see cref="SessionPlanningService"/>.
+    /// </summary>
+    /// <param name="db">Контекст базы данных.</param>
+    /// <param name="logger">Логгер для записи событий.</param>
+    /// <param name="schedulingService">Сервис поиска пересечений.</param>
+    /// <param name="recommendationService">Сервис рекомендаций.</param>
+    public SessionPlanningService(
+        AppDbContext db,
+        ILogger<SessionPlanningService> logger,
+        SchedulingService schedulingService,
+        IRecommendationService recommendationService)
     {
-        _recommendationService = recommendationService;
-        _planningSessions = new Dictionary<long, PlanningSession>();
+        _db = db ?? throw new ArgumentNullException(nameof(db));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _schedulingService = schedulingService ?? throw new ArgumentNullException(nameof(schedulingService));
+        _recommendationService = recommendationService ?? throw new ArgumentNullException(nameof(recommendationService));
     }
 
     /// <summary>
-    /// Создает новую сессию планирования по запросу администратора.
+    /// Автоматически запускает поиск окон, выбирает ближайшее и возвращает результат.
     /// </summary>
-    public PlanningSession CreatePlanningSession(
-        long chatId,
-        long requestedBy,
-        List<long> participantIds,
-        double sessionDurationHours)
+    /// <param name="groupId">Идентификатор группы.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Результат авто-планирования.</returns>
+    public async Task<AutoPlanningResult> AutoPlanGroupAsync(int groupId, CancellationToken ct)
     {
-        lock (_lock)
+        var group = await LoadFreshGroupAsync(groupId, ct);
+        if (group == null)
         {
-            var session = new PlanningSession
-            {
-                SessionId = GenerateSessionId(),
-                ChatId = chatId,
-                RequestedBy = requestedBy,
-                SessionDurationHours = sessionDurationHours,
-                Status = PlanningStatus.WaitingForAvailability,
-                Participants = participantIds.Select(id => new PlanningParticipant
-                {
-                    PlayerId = id,
-                    PlayerName = $"Игрок {id}" // TODO: Заменить на получение имени из БД
-                }).ToList()
-            };
-
-            _planningSessions[session.SessionId] = session;
-
-            return session;
-        }
-    }
-
-    /// <summary>
-    /// Получает сессию планирования по идентификатору.
-    /// </summary>
-    public PlanningSession GetSession(long sessionId)
-    {
-        lock (_lock)
-        {
-            _planningSessions.TryGetValue(sessionId, out var session);
-            return session;
-        }
-    }
-
-    /// <summary>
-    /// Получает активную сессию планирования для чата.
-    /// </summary>
-    public PlanningSession GetActiveSessionForChat(long chatId)
-    {
-        lock (_lock)
-        {
-            return _planningSessions.Values
-                .FirstOrDefault(s => s.ChatId == chatId && s.Status != PlanningStatus.Scheduled && s.Status != PlanningStatus.Cancelled);
-        }
-    }
-
-    /// <summary>
-    /// Обновляет доступность игрока в сессии планирования.
-    /// </summary>
-    public PlanningResult UpdatePlayerAvailability(
-        long sessionId,
-        long playerId,
-        List<TimeSlot> availableSlots,
-        DateTime? preferredStart = null,
-        DateTime? preferredEnd = null)
-    {
-        lock (_lock)
-        {
-            if (!_planningSessions.TryGetValue(sessionId, out var session))
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = PlanningStatus.Cancelled,
-                    Message = "Сессия планирования не найдена"
-                };
-            }
-
-            var participant = session.Participants.FirstOrDefault(p => p.PlayerId == playerId);
-            if (participant == null)
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = session.Status,
-                    Message = "Игрок не является участником сессии"
-                };
-            }
-
-            participant.AvailabilitySlots = availableSlots;
-            participant.PreferredStartTime = preferredStart;
-            participant.PreferredEndTime = preferredEnd;
-            participant.LastAvailabilityUpdate = DateTime.UtcNow;
-            session.UpdatedAt = DateTime.UtcNow;
-
-            // Проверяем, все ли игроки заполнили доступность
-            if (session.AllPlayersFilledAvailability && session.Status == PlanningStatus.WaitingForAvailability)
-            {
-                return TryAutoPlanSession(session);
-            }
-
-            return new PlanningResult
-            {
-                Success = true,
-                Status = session.Status,
-                Message = $"Доступность обновлена. Заполнено: {session.PlayersWithAvailabilityCount}/{session.TotalPlayersCount}"
-            };
-        }
-    }
-
-    /// <summary>
-    /// Пытается автоматически запланировать сессию при заполнении всеми игроками.
-    /// </summary>
-    private PlanningResult TryAutoPlanSession(PlanningSession session)
-    {
-        // Ищем прямое пересечение без сдвигов
-        var directIntersection = FindDirectIntersection(session);
-
-        if (directIntersection != null)
-        {
-            // Найдено прямое пересечение - запрашиваем подтверждение
-            session.ScheduledStartTime = directIntersection.Start;
-            session.ScheduledEndTime = directIntersection.End;
-            session.Status = PlanningStatus.WaitingForConfirmation;
-
-            return new PlanningResult
-            {
-                Success = true,
-                Status = PlanningStatus.WaitingForConfirmation,
-                ScheduledStartTime = directIntersection.Start,
-                ScheduledEndTime = directIntersection.End,
-                Message = $"Найдено время для всех игроков: {directIntersection.Start:dd.MM.yyyy HH:mm} - {directIntersection.End:dd.MM.yyyy HH:mm}. Требуется подтверждение."
-            };
+            _logger.LogWarning("Группа {GroupId} не найдена для авто-планирования", groupId);
+            return new AutoPlanningResult { Success = false, Message = "Группа не найдена" };
         }
 
-        // Прямое пересечение не найдено - запускаем рекомендации
-        return StartRecommendationProcess(session);
-    }
+        LogPlayerSlotsForDebug(group);
 
-    /// <summary>
-    /// Ищет прямое пересечение доступности всех игроков без сдвигов.
-    /// </summary>
-    private TimeSlot FindDirectIntersection(PlanningSession session)
-    {
-        if (session.Participants.Count == 0)
+        var intersections = await _schedulingService.FindIntersectionsAsync(groupId, BotConstants.MinPlanningDurationHours);
+        if (intersections.Count == 0)
         {
-            return null;
+            _logger.LogInformation("Пересечения не найдены для группы {GroupName}, запускаем рекомендации", group.Name);
+            return await HandleNoIntersectionsAsync(group, ct);
         }
 
-        var allSlots = session.Participants
-            .Where(p => p.AvailabilitySlots.Count > 0)
-            .Select(p => p.AvailabilitySlots)
-            .ToList();
+        var nearestSlot = intersections.OrderBy(i => i.Start).First();
+        _logger.LogInformation("Найдено пересечение для {GroupName}: {StartTime}", group.Name, nearestSlot.Start);
 
-        if (allSlots.Count != session.Participants.Count)
-        {
-            return null;
-        }
-
-        // Начинаем с первого игрока
-        var intersection = allSlots[0].ToList();
-
-        // Последовательно пересекаем со слотами остальных игроков
-        for (int i = 1; i < allSlots.Count; i++)
-        {
-            var newIntersection = new List<TimeSlot>();
-
-            foreach (var slot1 in intersection)
-            {
-                foreach (var slot2 in allSlots[i])
-                {
-                    var intersectStart = slot1.Start > slot2.Start ? slot1.Start : slot2.Start;
-                    var intersectEnd = slot1.End < slot2.End ? slot1.End : slot2.End;
-
-                    if (intersectStart < intersectEnd)
-                    {
-                        newIntersection.Add(new TimeSlot
-                        {
-                            Start = intersectStart,
-                            End = intersectEnd
-                        });
-                    }
-                }
-            }
-
-            intersection = newIntersection;
-
-            if (intersection.Count == 0)
-            {
-                return null;
-            }
-        }
-
-        // Проверяем, есть ли пересечение достаточной длительности
-        var sessionDuration = TimeSpan.FromHours(session.SessionDurationHours);
-        var suitableSlot = intersection.FirstOrDefault(s => s.DurationHours >= session.SessionDurationHours);
-
-        if (suitableSlot != null)
-        {
-            return new TimeSlot
-            {
-                Start = suitableSlot.Start,
-                End = suitableSlot.Start + sessionDuration
-            };
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Запускает процесс рекомендаций когда прямое пересечение не найдено.
-    /// </summary>
-    private PlanningResult StartRecommendationProcess(PlanningSession session)
-    {
-        var playersAvailability = session.Participants.Select(p => new PlayerAvailability
-        {
-            PlayerId = p.PlayerId,
-            PlayerName = p.PlayerName,
-            AvailableSlots = p.AvailabilitySlots,
-            PreferredStartTime = p.PreferredStartTime,
-            PreferredEndTime = p.PreferredEndTime
-        }).ToList();
-
-        var recommendationResult = _recommendationService.FindRecommendations(
-            playersAvailability,
-            session.SessionDurationHours);
-
-        if (!recommendationResult.HasRecommendations)
-        {
-            session.Status = PlanningStatus.Cancelled;
-
-            return new PlanningResult
-            {
-                Success = false,
-                Status = PlanningStatus.Cancelled,
-                Message = "К сожалению, не удалось найти подходящее время для сессии. Попробуйте расширить доступность."
-            };
-        }
-
-        session.RecommendationResult = recommendationResult;
-        session.Status = PlanningStatus.RecommendationsSent;
-
-        // Берем лучший вариант для предложения
-        var bestOption = recommendationResult.GetBestOption();
-        session.SelectedRecommendationIndex = 0;
-
-        return new PlanningResult
+        return new AutoPlanningResult
         {
             Success = true,
-            Status = PlanningStatus.RecommendationsSent,
-            ScheduledStartTime = bestOption.ProposedStartTime,
-            ScheduledEndTime = bestOption.ProposedEndTime,
-            Recommendations = recommendationResult.Options.Take(3).ToList(),
-            Message = $"Прямое пересечение не найдено. Предлагаем {recommendationResult.OptionsCount} вариантов. Лучший: {bestOption.ProposedStartTime:dd.MM.yyyy HH:mm} ({bestOption.GetPriorityDescription()})"
+            HasIntersection = true,
+            SelectedSlot = nearestSlot,
+            Message = $"Найдено окно: {nearestSlot.Start:dd.MM HH:mm} - {nearestSlot.End:HH:mm}"
         };
     }
 
     /// <summary>
-    /// Обрабатывает подтверждение игроком выбранного времени.
+    /// Обновляет данные сессии в группе.
     /// </summary>
-    public PlanningResult ConfirmTime(
-        long sessionId,
-        long playerId)
+    /// <param name="group">Группа для обновления.</param>
+    /// <param name="sessionStartUtc">Время начала сессии в UTC.</param>
+    public void UpdateGroupSessionData(Group group, DateTime sessionStartUtc)
     {
-        lock (_lock)
+        group.CurrentSessionUtc = sessionStartUtc;
+        group.ConfirmedPlayerIds.Clear();
+        group.DeclinedPlayerIds.Clear();
+        group.SessionStatus = SessionStatus.Pending;
+    }
+
+    /// <summary>
+    /// Проверяет доступность игроков на уже назначенной сессии.
+    /// </summary>
+    /// <param name="group">Группа для проверки.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Результат проверки доступности.</returns>
+    public async Task<SessionAvailabilityResult> CheckSessionAvailabilityAsync(Group group, CancellationToken ct)
+    {
+        if (group.CurrentSessionUtc == null)
         {
-            if (!_planningSessions.TryGetValue(sessionId, out var session))
+            _logger.LogDebug("Группа {GroupName} не имеет назначенной сессии", group.Name);
+            return new SessionAvailabilityResult { HasSession = false };
+        }
+
+        _logger.LogInformation("Проверка доступности для сессии {GroupName} на {SessionTime}", group.Name, group.CurrentSessionUtc);
+
+        var sessionStart = group.CurrentSessionUtc.Value;
+        var (canAttendPlayers, cannotAttendPlayers) = await CheckPlayersAvailabilityAsync(group, sessionStart, ct);
+        var adminsCanAttend = await CheckAdminsAvailabilityForSessionAsync(group, canAttendPlayers, ct);
+        var attendanceRate = CalculateAttendanceRate(canAttendPlayers.Count, group.Players.Count);
+
+        return new SessionAvailabilityResult
+        {
+            HasSession = true,
+            CanAttendPlayers = canAttendPlayers,
+            CannotAttendPlayers = cannotAttendPlayers,
+            AdminsCanAttend = adminsCanAttend,
+            AttendanceRate = attendanceRate,
+            ShouldConfirm = attendanceRate >= BotConstants.ConfirmationThreshold && adminsCanAttend,
+            ShouldReschedule = attendanceRate < BotConstants.ConfirmationThreshold || !adminsCanAttend
+        };
+    }
+
+    /// <summary>
+    /// Проверяет доступность всех игроков группы.
+    /// </summary>
+    private async Task<(List<Player> CanAttend, List<Player> CannotAttend)> CheckPlayersAvailabilityAsync(
+        Group group,
+        DateTime sessionStart,
+        CancellationToken ct)
+    {
+        var canAttend = new List<Player>();
+        var cannotAttend = new List<Player>();
+        var sessionEnd = sessionStart.AddHours(BotConstants.DefaultSessionDurationHours);
+
+        foreach (var player in group.Players)
+        {
+            var playerSlots = await _db.Slots.Where(s => s.PlayerId == player.TelegramId).ToListAsync(ct);
+            var canPlayerAttend = playerSlots.Any(s => s.DateTimeUtc <= sessionStart && s.DateTimeUtc.AddHours(1) > sessionStart);
+            (canPlayerAttend ? canAttend : cannotAttend).Add(player);
+        }
+
+        return (canAttend, cannotAttend);
+    }
+
+    /// <summary>
+    /// Проверяет доступность администраторов для сессии.
+    /// </summary>
+    private async Task<bool> CheckAdminsAvailabilityForSessionAsync(Group group, List<Player> canAttendPlayers, CancellationToken ct)
+    {
+        var adminsInGroup = group.Players.Where(p => group.AdminIds.Contains(p.TelegramId)).ToList();
+        return adminsInGroup.All(admin => canAttendPlayers.Contains(admin));
+    }
+
+    /// <summary>
+    /// Рассчитывает процент присутствующих игроков.
+    /// </summary>
+    private double CalculateAttendanceRate(int canAttendCount, int totalCount) =>
+        totalCount > 0 ? (double)canAttendCount / totalCount : 0;
+
+    /// <summary>
+    /// Загружает актуальные данные группы из БД.
+    /// </summary>
+    private async Task<Group?> LoadFreshGroupAsync(int groupId, CancellationToken ct) =>
+        await _db.Groups
+            .Include(g => g.Players)
+            .ThenInclude(p => p.Slots)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(g => g.Id == groupId, ct);
+
+    /// <summary>
+    /// Логирует количество слотов у каждого игрока для отладки.
+    /// </summary>
+    private void LogPlayerSlotsForDebug(Group group)
+    {
+        foreach (var player in group.Players)
+        {
+            _logger.LogDebug("Игрок {Username} (ID={TelegramId}) имеет {SlotsCount} слотов",
+                player.Username,
+                player.TelegramId,
+                player.Slots?.Count ?? 0);
+        }
+    }
+
+    /// <summary>
+    /// Обрабатывает ситуацию, когда пересечения не найдены — запускает рекомендации.
+    /// </summary>
+    private async Task<AutoPlanningResult> HandleNoIntersectionsAsync(Group group, CancellationToken ct)
+    {
+        var playersAvailability = await BuildPlayersAvailabilityAsync(group, ct);
+        var recommendationResult = _recommendationService.FindRecommendations(playersAvailability, BotConstants.MinPlanningDurationHours);
+
+        if (!recommendationResult.HasRecommendations)
+        {
+            return new AutoPlanningResult
             {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = PlanningStatus.Cancelled,
-                    Message = "Сессия планирования не найдена"
-                };
-            }
-
-            var participant = session.Participants.FirstOrDefault(p => p.PlayerId == playerId);
-            if (participant == null)
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = session.Status,
-                    Message = "Игрок не является участником сессии"
-                };
-            }
-
-            if (participant.HasConfirmed)
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = session.Status,
-                    Message = "Вы уже подтвердили это время"
-                };
-            }
-
-            participant.HasConfirmed = true;
-            session.ConfirmationCount = session.Participants.Count(p => p.HasConfirmed);
-            session.UpdatedAt = DateTime.UtcNow;
-
-            // Проверяем, достигнут ли порог 75%
-            if (session.HasEnoughConfirmations)
-            {
-                session.Status = PlanningStatus.Scheduled;
-
-                return new PlanningResult
-                {
-                    Success = true,
-                    Status = PlanningStatus.Scheduled,
-                    ScheduledStartTime = session.ScheduledStartTime,
-                    ScheduledEndTime = session.ScheduledEndTime,
-                    Message = $"Сессия запланирована! {session.ConfirmationCount}/{session.TotalPlayersCount} игроков подтвердили ({session.ConfirmationPercentage:F0}%)."
-                };
-            }
-
-            return new PlanningResult
-            {
-                Success = true,
-                Status = session.Status,
-                Message = $"Подтверждение принято. {session.ConfirmationCount}/{session.TotalPlayersCount} игроков подтвердили ({session.ConfirmationPercentage:F0}%). Нужно {Math.Ceiling(session.TotalPlayersCount * 0.75)} подтверждений."
+                Success = false,
+                HasIntersection = false,
+                HasRecommendations = false,
+                Message = "Рекомендации не найдены"
             };
         }
-    }
 
-    /// <summary>
-    /// Выбирает другой вариант рекомендации.
-    /// </summary>
-    public PlanningResult SelectRecommendation(
-        long sessionId,
-        long playerId,
-        int recommendationIndex)
-    {
-        lock (_lock)
+        var bestOption = recommendationResult.GetBestOption();
+        return new AutoPlanningResult
         {
-            if (!_planningSessions.TryGetValue(sessionId, out var session))
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = PlanningStatus.Cancelled,
-                    Message = "Сессия планирования не найдена"
-                };
-            }
-
-            // Только админ может выбирать вариант рекомендации
-            if (playerId != session.RequestedBy)
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = session.Status,
-                    Message = "Только создатель запроса может выбрать вариант рекомендации"
-                };
-            }
-
-            if (session.RecommendationResult == null || recommendationIndex >= session.RecommendationResult.Options.Count)
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = session.Status,
-                    Message = "Неверный индекс рекомендации"
-                };
-            }
-
-            session.SelectedRecommendationIndex = recommendationIndex;
-            var selectedOption = session.RecommendationResult.Options[recommendationIndex];
-
-            session.ScheduledStartTime = selectedOption.ProposedStartTime;
-            session.ScheduledEndTime = selectedOption.ProposedEndTime;
-
-            // Сбрасываем подтверждения при смене варианта
-            foreach (var participant in session.Participants)
-            {
-                participant.HasConfirmed = false;
-            }
-            session.ConfirmationCount = 0;
-            session.Status = PlanningStatus.WaitingForConfirmation;
-            session.UpdatedAt = DateTime.UtcNow;
-
-            return new PlanningResult
-            {
-                Success = true,
-                Status = PlanningStatus.WaitingForConfirmation,
-                ScheduledStartTime = selectedOption.ProposedStartTime,
-                ScheduledEndTime = selectedOption.ProposedEndTime,
-                Message = $"Выбран вариант #{recommendationIndex + 1}: {selectedOption.ProposedStartTime:dd.MM.yyyy HH:mm} ({selectedOption.GetPriorityDescription()})"
-            };
-        }
+            Success = true,
+            HasIntersection = false,
+            HasRecommendations = true,
+            RecommendationResult = recommendationResult,
+            BestOption = bestOption,
+            Message = $"Найдена рекомендация: {bestOption.ProposedStartTime:dd.MM HH:mm}"
+        };
     }
 
     /// <summary>
-    /// Отменяет сессию планирования.
+    /// Строит список доступности игроков для сервиса рекомендаций.
     /// </summary>
-    public PlanningResult CancelSession(long sessionId, long playerId)
+    private async Task<List<PlayerAvailability>> BuildPlayersAvailabilityAsync(Group group, CancellationToken ct)
     {
-        lock (_lock)
+        var playersAvailability = new List<PlayerAvailability>();
+        foreach (var player in group.Players)
         {
-            if (!_planningSessions.TryGetValue(sessionId, out var session))
+            var slots = await _db.Slots
+                .Where(s => s.PlayerId == player.TelegramId)
+                .OrderBy(s => s.DateTimeUtc)
+                .ToListAsync(ct);
+            var availableSlots = slots.Select(s => new TimeSlot
             {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = PlanningStatus.Cancelled,
-                    Message = "Сессия планирования не найдена"
-                };
-            }
-
-            // Только админ может отменить сессию
-            if (playerId != session.RequestedBy)
+                Start = s.DateTimeUtc,
+                End = s.DateTimeUtc.AddHours(1)
+            }).ToList();
+            playersAvailability.Add(new PlayerAvailability
             {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = session.Status,
-                    Message = "Только создатель запроса может отменить сессию"
-                };
-            }
-
-            session.Status = PlanningStatus.Cancelled;
-            session.UpdatedAt = DateTime.UtcNow;
-
-            return new PlanningResult
-            {
-                Success = true,
-                Status = PlanningStatus.Cancelled,
-                Message = "Сессия планирования отменена"
-            };
+                PlayerId = player.TelegramId,
+                PlayerName = player.Username ?? $"Игрок {player.TelegramId}",
+                AvailableSlots = availableSlots,
+                PreferredStartTime = availableSlots.FirstOrDefault()?.Start,
+                PreferredEndTime = availableSlots.LastOrDefault()?.End
+            });
         }
+        _logger.LogInformation("Построена доступность для {Count} игроков группы {GroupName}",
+            playersAvailability.Count,
+            group.Name);
+        return playersAvailability;
     }
 
     /// <summary>
-    /// Запускает рекомендации вручную (по запросу админа).
+    /// Сбрасывает данные голосования в группе.
     /// </summary>
-    public PlanningResult RequestRecommendations(long sessionId, long playerId)
+    /// <param name="group">Группа для сброса.</param>
+    public void ResetGroupVotingData(Group group)
     {
-        lock (_lock)
-        {
-            if (!_planningSessions.TryGetValue(sessionId, out var session))
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = PlanningStatus.Cancelled,
-                    Message = "Сессия планирования не найдена"
-                };
-            }
-
-            // Только админ может запросить рекомендации
-            if (playerId != session.RequestedBy)
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = session.Status,
-                    Message = "Только создатель запроса может запросить рекомендации"
-                };
-            }
-
-            // Проверяем, все ли заполнили доступность
-            if (!session.AllPlayersFilledAvailability)
-            {
-                return new PlanningResult
-                {
-                    Success = false,
-                    Status = session.Status,
-                    Message = $"Не все игроки заполнили доступность: {session.PlayersWithAvailabilityCount}/{session.TotalPlayersCount}"
-                };
-            }
-
-            return StartRecommendationProcess(session);
-        }
+        group.CurrentSessionUtc = null;
+        group.ConfirmedPlayerIds.Clear();
+        group.DeclinedPlayerIds.Clear();
+        group.FinishedVotingPlayerIds.Clear();
     }
 
     /// <summary>
-    /// Генерирует уникальный идентификатор сессии.
+    /// Получает рекомендации для группы.
     /// </summary>
-    private long GenerateSessionId()
+    /// <param name="group">Группа для получения рекомендаций.</param>
+    /// <param name="ct">Токен отмены операции.</param>
+    /// <returns>Результат рекомендаций.</returns>
+    public async Task<RecommendationResult> GetRecommendationsForGroupAsync(Group group, CancellationToken ct)
     {
-        return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var playersAvailability = await BuildPlayersAvailabilityAsync(group, ct);
+        return _recommendationService.FindRecommendations(playersAvailability, BotConstants.MinPlanningDurationHours);
     }
+}
 
-    /// <summary>
-    /// Очищает старые завершенные сессии.
-    /// </summary>
-    public void CleanupOldSessions(int maxAgeDays = 7)
-    {
-        lock (_lock)
-        {
-            var cutoffDate = DateTime.UtcNow.AddDays(-maxAgeDays);
+/// <summary>
+/// Результат авто-планирования.
+/// </summary>
+public class AutoPlanningResult
+{
+    public bool Success { get; set; }
+    public bool HasIntersection { get; set; }
+    public bool HasRecommendations { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public DateTimeRange? SelectedSlot { get; set; }
+    public RecommendationResult? RecommendationResult { get; set; }
+    public RecommendationOption? BestOption { get; set; }
+}
 
-            var oldSessionIds = _planningSessions
-                .Where(kv => kv.Value.UpdatedAt < cutoffDate &&
-                       (kv.Value.Status == PlanningStatus.Scheduled ||
-                        kv.Value.Status == PlanningStatus.Cancelled))
-                .Select(kv => kv.Key)
-                .ToList();
-
-            foreach (var sessionId in oldSessionIds)
-            {
-                _planningSessions.Remove(sessionId);
-            }
-        }
-    }
+/// <summary>
+/// Результат проверки доступности сессии.
+/// </summary>
+public class SessionAvailabilityResult
+{
+    public bool HasSession { get; set; }
+    public List<Player> CanAttendPlayers { get; set; } = new List<Player>();
+    public List<Player> CannotAttendPlayers { get; set; } = new List<Player>();
+    public bool AdminsCanAttend { get; set; }
+    public double AttendanceRate { get; set; }
+    public bool ShouldConfirm { get; set; }
+    public bool ShouldReschedule { get; set; }
 }

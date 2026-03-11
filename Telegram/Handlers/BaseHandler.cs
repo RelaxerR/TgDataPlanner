@@ -9,6 +9,7 @@ using TgDataPlanner.Common;
 using TgDataPlanner.Data;
 using TgDataPlanner.Data.Entities;
 using TgDataPlanner.Services;
+using TgDataPlanner.Configuration;
 
 namespace TgDataPlanner.Telegram.Handlers;
 
@@ -78,7 +79,7 @@ public abstract class BaseHandler
 
         if (!long.TryParse(config["TelegramBot:MainChatId"], out var mainChatId))
         {
-            Logger.LogError("Не удалось распарсить MainChatId из конфигурации. Значение: {Value}", config["TelegramBot:MainChatId"]);
+            Logger.LogError(BotConstants.SystemMessages.MainChatIdParseFailed, config["TelegramBot:MainChatId"]);
         }
         MainChatId = mainChatId;
 
@@ -96,13 +97,13 @@ public abstract class BaseHandler
                 }
                 else
                 {
-                    Logger.LogError("Не удалось распарсить AdminId из конфигурации. Значение: {Value}", adminIdString);
+                    Logger.LogError(BotConstants.SystemMessages.AdminIdParseFailed, adminIdString);
                 }
             }
         }
         else
         {
-            Logger.LogError("AdminIds не настроен в конфигурации");
+            Logger.LogError(BotConstants.SystemMessages.AdminIdsNotConfigured);
         }
     }
 
@@ -137,7 +138,7 @@ public abstract class BaseHandler
         ReplyMarkup? replyMarkup,
         CancellationToken ct = default)
     {
-        Logger.LogDebug("Отправка сообщения пользователю {TelegramId}: {TextPreview}", telegramId, Truncate(text, 50));
+        Logger.LogDebug(BotConstants.SystemMessages.SendMessageToUser, telegramId, Truncate(text, 50));
         return await BotClient.SendMessage(
             chatId: telegramId,
             text: text,
@@ -179,7 +180,7 @@ public abstract class BaseHandler
         ReplyMarkup? replyMarkup,
         CancellationToken ct = default)
     {
-        Logger.LogDebug("Отправка сообщения в чат группы {ChatId}: {TextPreview}", chatId, Truncate(text, 50));
+        Logger.LogDebug(BotConstants.SystemMessages.SendMessageToGroup, chatId, Truncate(text, 50));
         return await BotClient.SendMessage(
             chatId: chatId,
             text: text,
@@ -232,11 +233,11 @@ public abstract class BaseHandler
                     parseMode: ParseMode.Markdown,
                     replyMarkup: replyMarkup,
                     cancellationToken: ct);
-                Logger.LogDebug("Уведомление отправлено пользователю @{UserId}: {TextPreview}", userId, Truncate(text, 50));
+                Logger.LogDebug(BotConstants.SystemMessages.NotifyUser, userId, Truncate(text, 50));
             }
             catch (Exception ex)
             {
-                Logger.LogWarning(ex, "Не удалось отправить уведомление пользователю {UserId}", userId);
+                Logger.LogWarning(ex, BotConstants.SystemMessages.NotifyUserFailed, userId);
             }
         }
     }
@@ -273,11 +274,11 @@ public abstract class BaseHandler
         var mainAdminId = AdminIds.FirstOrDefault();
         if (mainAdminId == 0)
         {
-            Logger.LogWarning("Попытка отправить сообщение главному администратору, но AdminIds не настроен");
+            Logger.LogWarning(BotConstants.SystemMessages.MainAdminNotConfigured);
             return null!;
         }
 
-        Logger.LogDebug("Отправка сообщения главному администратору {AdminId}: {TextPreview}", mainAdminId, Truncate(text, 50));
+        Logger.LogDebug(BotConstants.SystemMessages.SendMessageToMainAdmin, mainAdminId, Truncate(text, 50));
         return await BotClient.SendMessage(
             chatId: mainAdminId,
             text: text,
@@ -317,7 +318,7 @@ public abstract class BaseHandler
     {
         if (AdminIds.Count == 0)
         {
-            Logger.LogWarning("Попытка отправить сообщение всем администраторам, но AdminIds не настроен");
+            Logger.LogWarning(BotConstants.SystemMessages.MainAdminNotConfigured);
             return;
         }
 
@@ -331,11 +332,11 @@ public abstract class BaseHandler
                     parseMode: ParseMode.Markdown,
                     replyMarkup: replyMarkup,
                     cancellationToken: ct);
-                Logger.LogDebug("Уведомление отправлено администратору @{AdminId}: {TextPreview}", adminId, Truncate(text, 50));
+                Logger.LogDebug(BotConstants.SystemMessages.NotifyAdmin, adminId, Truncate(text, 50));
             }
             catch (Exception ex)
             {
-                Logger.LogWarning(ex, "Не удалось отправить уведомление администратору {AdminId}", adminId);
+                Logger.LogWarning(ex, BotConstants.SystemMessages.NotifyAdminFailed, adminId);
             }
         }
     }
@@ -371,11 +372,11 @@ public abstract class BaseHandler
     {
         if (MainChatId == 0)
         {
-            Logger.LogWarning("Попытка отправить уведомление в MainChat, но MainChatId не настроен");
+            Logger.LogWarning(BotConstants.SystemMessages.MainChatNotConfigured);
             return;
         }
 
-        Logger.LogDebug("Системное уведомление в основной чат: {TextPreview}", Truncate(text, 50));
+        Logger.LogDebug(BotConstants.SystemMessages.NotifyMainChat, Truncate(text, 50));
         await BotClient.SendMessage(
             chatId: MainChatId,
             text: text,
@@ -419,11 +420,11 @@ public abstract class BaseHandler
     {
         if (query.Message is null)
         {
-            Logger.LogWarning("Попытка редактировать сообщение, но CallbackQuery.Message равен null");
+            Logger.LogWarning(BotConstants.SystemMessages.EditMessageNull);
             return;
         }
 
-        Logger.LogDebug("Редактирование сообщения {MessageId} в чате {ChatId}", query.Message.MessageId, query.Message.Chat.Id);
+        Logger.LogDebug(BotConstants.SystemMessages.EditMessage, query.Message.MessageId, query.Message.Chat.Id);
         await BotClient.EditMessageText(
             chatId: query.Message.Chat.Id,
             messageId: query.Message.MessageId,
@@ -447,7 +448,7 @@ public abstract class BaseHandler
     {
         if (query.Message is null)
         {
-            Logger.LogWarning("Попытка редактировать клавиатуру, но CallbackQuery.Message равен null");
+            Logger.LogWarning(BotConstants.SystemMessages.EditMarkupNull);
             return;
         }
 

@@ -7,6 +7,7 @@ using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using TgDataPlanner.Telegram.Handlers;
+using TgDataPlanner.Configuration;
 
 namespace TgDataPlanner.Telegram;
 
@@ -44,19 +45,18 @@ public class BotBackgroundService : BackgroundService
     /// <returns>Задача выполнения службы.</returns>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Запуск инициализации Telegram-бота...");
-
+        _logger.LogInformation(BotConstants.SystemMessages.BotStartingInit);
         try
         {
             var botInfo = await _botClient.GetMe(stoppingToken);
             _logger.LogInformation(
-                "Бот @{Username} (ID: {BotId}) успешно аутентифицирован",
+                BotConstants.SystemMessages.BotAuthenticated,
                 botInfo.Username,
                 botInfo.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Не удалось получить информацию о боте. Проверьте токен API.");
+            _logger.LogError(ex, BotConstants.SystemMessages.BotTokenCheckFailed);
             return;
         }
 
@@ -66,15 +66,14 @@ public class BotBackgroundService : BackgroundService
             AllowedUpdates = Array.Empty<UpdateType>() // Получать все типы обновлений
         };
 
-        _logger.LogInformation("Настройка обработчиков обновлений...");
-
+        _logger.LogInformation(BotConstants.SystemMessages.BotUpdateHandlersSetup);
         _botClient.StartReceiving(
             updateHandler: HandleUpdateAsync,
             errorHandler: HandleErrorAsync,
             receiverOptions: receiverOptions,
             cancellationToken: stoppingToken);
 
-        _logger.LogInformation("✅ Бот запущен и ожидает входящие события");
+        _logger.LogInformation(BotConstants.SystemMessages.BotStartedWaiting);
 
         // Поддерживаем службу активной до сигнала отмены
         await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
@@ -94,23 +93,21 @@ public class BotBackgroundService : BackgroundService
         {
             using var scope = _serviceProvider.CreateScope();
             var updateHandler = scope.ServiceProvider.GetRequiredService<UpdateHandler>();
-
             _logger.LogDebug(
-                "Делегирование обновления типа {UpdateType} в UpdateHandler",
+                BotConstants.SystemMessages.BotUpdateDelegated,
                 update.Type);
-
             await updateHandler.HandleUpdateAsync(update, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Ожидаемое поведение при остановке службы
-            _logger.LogDebug("Обработка обновления прервана из-за отмены службы");
+            _logger.LogDebug(BotConstants.SystemMessages.BotUpdateCancelled);
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
-                "Необработанное исключение при обработке обновления типа {UpdateType}",
+                BotConstants.SystemMessages.BotUpdateError,
                 update?.Type);
         }
     }
@@ -134,20 +131,18 @@ public class BotBackgroundService : BackgroundService
         {
             case ApiRequestException apiEx:
                 _logger.LogWarning(
-                    "API-ошибка Telegram [{ErrorCode}]: {Description}. Источник: {Source}",
+                    BotConstants.SystemMessages.BotApiError,
                     apiEx.ErrorCode,
                     apiEx.Message,
                     source);
                 break;
-
             case TaskCanceledException when ct.IsCancellationRequested:
-                _logger.LogDebug("Операция отменена при остановке службы. Источник: {Source}", source);
+                _logger.LogDebug(BotConstants.SystemMessages.BotServiceCancelled, source);
                 break;
-
             default:
                 _logger.LogError(
                     ex,
-                    "Критическая ошибка в конвейере получения обновлений. Источник: {Source}",
+                    BotConstants.SystemMessages.BotCriticalError,
                     source);
                 break;
         }
@@ -163,13 +158,10 @@ public class BotBackgroundService : BackgroundService
     /// <returns>Задача выполнения остановки.</returns>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Получен сигнал остановки бота. Завершение работы...");
-
+        _logger.LogInformation(BotConstants.SystemMessages.BotStopping);
         // Останавливаем polling (если используется новая версия библиотеки с StopReceiving)
         // _botClient.StopReceiving(cancellationToken);
-
         await base.StopAsync(cancellationToken);
-
-        _logger.LogInformation("Бот остановлен");
+        _logger.LogInformation(BotConstants.SystemMessages.BotStopped);
     }
 }
