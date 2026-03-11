@@ -163,6 +163,33 @@ public class CallbackHandler : BaseHandler
             case var _ when data.StartsWith(BotConstants.CallbackPrefixes.SelectRecommendation):
                 await HandleSelectRecommendationAsync(callbackQuery, userId, ct);
                 break;
+            case var _ when data.StartsWith(BotConstants.CallbackPrefixes.ViewGroupMembers):
+                await HandleViewGroupMembersAsync(callbackQuery, userId, ct);
+                break;
+            case var _ when data.StartsWith(BotConstants.CallbackPrefixes.ViewSessionInfo):
+                await HandleViewSessionInfoAsync(callbackQuery, userId, ct);
+                break;
+            case BotConstants.CallbackPrefixes.StartMenuFree:
+                await HandleStartMenuFreeAsync(callbackQuery, userId, ct);
+                break;
+            case BotConstants.CallbackPrefixes.StartMenuTimeZone:
+                await HandleStartMenuTimeZoneAsync(callbackQuery, userId, ct);
+                break;
+            case BotConstants.CallbackPrefixes.StartMenuStatus:
+                await HandleStartMenuStatusAsync(callbackQuery, userId, ct);
+                break;
+            case BotConstants.CallbackPrefixes.StartMenuJoin:
+                await HandleStartMenuJoinAsync(callbackQuery, userId, ct);
+                break;
+            case BotConstants.CallbackPrefixes.StartMenuPlan:
+                await HandleStartMenuPlanAsync(callbackQuery, userId, ct);
+                break;
+            case BotConstants.CallbackPrefixes.StartMenuHelp:
+                await HandleStartMenuHelpAsync(callbackQuery, userId, ct);
+                break;
+            case BotConstants.CallbackPrefixes.ShowHelpMenu:
+                await HandleShowHelpMenuAsync(callbackQuery, userId, ct);
+                break;
             default:
                 _logger.LogWarning(BotConstants.CallbackHandlerLogs.UnknownCallback, data);
                 await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
@@ -262,14 +289,38 @@ public class CallbackHandler : BaseHandler
         var escapedGroupName = BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
         var dateStr = localTime.ToString(BotConstants.DateFormats.FullLocalTimeFormat);
         var timeStr = localTime.ToString("HH:mm");
-
+        // Формируем список участников группы
+        var playerList = string.Join("\n", group.Players.Select(p => $"• {p.GetMarkdownUsername()}"));
         var announcementText = string.Format(
-            BotConstants.PlayerMessages.SessionAnnouncement,
+            BotConstants.PlayerMessages.SessionAnnouncementWithPlayers,
             escapedGroupName,
             dateStr,
-            timeStr);
-
-        await _notificationService.NotifyAllInGroupAsync(group, announcementText, rsvpKeyboard, ct);
+            timeStr,
+            playerList);
+        // Отправляем в группу
+        await _notificationService.SendToGroupChatAsync(group.TelegramChatId, announcementText, rsvpKeyboard, ct);
+        // Отправляем каждому игроку в ЛС с учётом его часового пояса
+        foreach (var player in group.Players)
+        {
+            try
+            {
+                var playerLocalTime = ConvertUtcToLocal(group.CurrentSessionUtc.Value, player.TimeZoneOffset);
+                var playerDateStr = playerLocalTime.ToString(BotConstants.DateFormats.FullLocalTimeFormat);
+                var pmText = string.Format(
+                    BotConstants.PlayerMessages.AutoSessionAnnouncementPM,
+                    escapedGroupName,
+                    playerDateStr,
+                    playerLocalTime.ToString("HH:mm"),
+                    timeStr,
+                    BotConstants.DefaultSessionDurationHours);
+                await _notificationService.SendToUserAsync(player.TelegramId, pmText, rsvpKeyboard, ct);
+                _logger.LogDebug(BotConstants.CallbackHandlerLogs.RsvpSentDebug, player.TelegramId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, BotConstants.CallbackHandlerLogs.RsvpSendFailed, player.TelegramId);
+            }
+        }
     }
 
     /// <summary>
@@ -387,24 +438,47 @@ public class CallbackHandler : BaseHandler
     /// </summary>
     private async Task NotifyAboutSessionConfirmationAsync(Group group, SessionFinalizationResult result, CancellationToken ct)
     {
+        var adminInGroup = GetAdminsInGroup(group).FirstOrDefault();
+        var localTime = ConvertUtcToLocal(group.CurrentSessionUtc!.Value, adminInGroup?.TimeZoneOffset ?? 0);
+        // Формируем список участников
+        var playerList = string.Join("\n", group.Players.Select(p => $"• {p.GetMarkdownUsername()}"));
         var adminNotice = GetAdminsInGroup(group).Count > 0
             ? BotConstants.CallbackHandlerMessages.AllAdminsCanAttend
             : BotConstants.CallbackHandlerMessages.NoAdminsInGroup;
-
-        // Исправление: используем часовой пояс админа из группы, а не хардкод +3
-        var adminInGroup = GetAdminsInGroup(group).FirstOrDefault();
-        var localTime = ConvertUtcToLocal(group.CurrentSessionUtc!.Value, adminInGroup?.TimeZoneOffset ?? 0);
-
         var notificationText = string.Format(
-            BotConstants.AdminMessages.SessionConfirmed,
+            BotConstants.AdminMessages.SessionConfirmedWithPlayers,
             BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup),
             localTime.ToString(BotConstants.DateFormats.FullLocalTimeFormat),
+            localTime.ToString("HH:mm"),
+            playerList,
             result.ConfirmedCount,
             result.TotalPlayers,
             result.ParticipationRate,
             adminNotice);
-
         await _notificationService.NotifyMainChatAsync(notificationText, ct: ct);
+        // Отправляем подтверждение каждому игроку в ЛС
+        foreach (var player in group.Players)
+        {
+            try
+            {
+                var playerLocalTime = ConvertUtcToLocal(group.CurrentSessionUtc.Value, player.TimeZoneOffset);
+                var isConfirmed = group.ConfirmedPlayerIds.Contains(player.TelegramId);
+                if (isConfirmed)
+                {
+                    var pmText = string.Format(
+                        BotConstants.PlayerMessages.SessionConfirmedPM,
+                        BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup),
+                        playerLocalTime.ToString(BotConstants.DateFormats.FullLocalTimeFormat),
+                        playerLocalTime.ToString("HH:mm"),
+                        localTime.ToString("HH:mm"));
+                    await _notificationService.SendToUserAsync(player.TelegramId, pmText, ct: ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Не удалось отправить подтверждение игроку {UserId}", player.TelegramId);
+            }
+        }
         _logger.LogInformation(BotConstants.CallbackHandlerLogs.SessionConfirmedLog, group.Name, result.ParticipationRate);
     }
 
@@ -1455,6 +1529,386 @@ public class CallbackHandler : BaseHandler
         }
 
         await _notificationService.EditTextAsync(callbackQuery, resultText, new InlineKeyboardMarkup(buttons), ct);
+    }
+    
+    // Добавьте новые методы обработки:
+    /// <summary>
+    /// Обрабатывает просмотр состава группы.
+    /// </summary>
+    private async Task HandleViewGroupMembersAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        if (!IsAdmin(userId))
+        {
+            await _notificationService.AnswerCallbackAsync(callbackQuery, BotConstants.AdminMessages.AdminOnlyViewMembers, true, ct);
+            return;
+        }
+        if (!TryParseGroupIdFromCallback(callbackQuery.Data, BotConstants.CallbackPrefixes.ViewGroupMembers, out var groupId))
+        {
+            await _notificationService.AnswerCallbackAsync(callbackQuery, BotConstants.ErrorMessages.CallbackDataMissing, true, ct);
+            return;
+        }
+        var group = await GetGroupWithPlayersAsync(groupId, ct);
+        if (group == null)
+        {
+            await _notificationService.AnswerCallbackAsync(callbackQuery, BotConstants.ErrorMessages.GroupNotFound, true, ct);
+            return;
+        }
+        var playerList = string.Join("\n", group.Players.Select(p => $"• {p.GetMarkdownUsername()}"));
+        var adminIdsInGroup = GetAdminsInGroup(group);
+        var adminList = adminIdsInGroup.Count > 0
+            ? string.Join("\n", adminIdsInGroup.Select(p => $"• {p.GetMarkdownUsername()}"))
+            : BotConstants.AdminMessages.NoAdminsInGroup;
+        var messageText = string.Format(
+            BotConstants.AdminMessages.GroupMembersTitle,
+            BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup),
+            group.Players.Count,
+            playerList,
+            adminIdsInGroup.Count,
+            adminList);
+        await _notificationService.EditTextAsync(callbackQuery, messageText, ct: ct);
+        await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+        _logger.LogInformation(BotConstants.CallbackHandlerLogs.MembersViewed, userId, group.Name);
+    }
+    
+    /// <summary>
+    /// Обрабатывает просмотр информации о сессии.
+    /// </summary>
+    private async Task HandleViewSessionInfoAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        if (!TryParseGroupIdFromCallback(callbackQuery.Data, BotConstants.CallbackPrefixes.ViewSessionInfo, out var groupId))
+        {
+            await _notificationService.AnswerCallbackAsync(callbackQuery, BotConstants.ErrorMessages.CallbackDataMissing, true, ct);
+            return;
+        }
+        var group = await GetGroupWithPlayersAsync(groupId, ct);
+        var player = await UserService.GetPlayerAsync(userId, ct);
+        if (group == null || player == null)
+        {
+            await _notificationService.AnswerCallbackAsync(callbackQuery, BotConstants.ErrorMessages.GroupNotFound, true, ct);
+            return;
+        }
+        if (!group.CurrentSessionUtc.HasValue)
+        {
+            var text = string.Format(
+                BotConstants.AdminMessages.NoSessionScheduled,
+                BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup));
+            await _notificationService.EditTextAsync(callbackQuery, text, ct: ct);
+            await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+            return;
+        }
+        var localTime = ConvertUtcToLocal(group.CurrentSessionUtc.Value, player.TimeZoneOffset);
+        var duration = BotConstants.DefaultSessionDurationHours;
+        var confirmedList = group.Players
+            .Where(p => group.ConfirmedPlayerIds.Contains(p.TelegramId))
+            .Select(p => $"• {p.GetMarkdownUsername()}")
+            .ToList();
+        var declinedList = group.Players
+            .Where(p => group.DeclinedPlayerIds.Contains(p.TelegramId))
+            .Select(p => $"• {p.GetMarkdownUsername()}")
+            .ToList();
+        var messageText = string.Format(
+            BotConstants.AdminMessages.SessionInfoTitle,
+            BotConstants.TextHelpers.EscapeMarkdown(group.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup),
+            localTime.ToString(BotConstants.DateFormats.FullLocalTimeFormat),
+            duration,
+            group.SessionStatus,
+            group.ConfirmedPlayerIds.Count,
+            group.Players.Count,
+            confirmedList.Count > 0 ? string.Join("\n", confirmedList) : BotConstants.CallbackHandlerMessages.NoData,
+            declinedList.Count,
+            group.Players.Count,
+            declinedList.Count > 0 ? string.Join("\n", declinedList) : BotConstants.CallbackHandlerMessages.NoData);
+        await _notificationService.EditTextAsync(callbackQuery, messageText, ct: ct);
+        await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+        _logger.LogInformation(BotConstants.CallbackHandlerLogs.SessionInfoViewed, userId, group.Name);
+    }
+
+    /// <summary>
+    /// Обрабатывает кнопку "Моё время" из меню /start.
+    /// </summary>
+    private async Task HandleStartMenuFreeAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        var player = await GetPlayerWithSlotsAsync(userId, ct);
+        if (player is null)
+        {
+            await _notificationService.AnswerCallbackAsync(callbackQuery, BotConstants.ErrorMessages.PlayerNotFound, true, ct);
+            return;
+        }
+
+        try
+        {
+            await _notificationService.SendToUserAsync(
+                userId,
+                BotConstants.CommandMessages.FreeTimePrompt,
+                AvailabilityMenu.GetDateCalendar(player.TimeZoneOffset),
+                ct);
+
+            await _notificationService.EditTextAsync(callbackQuery, "📩 Отправил календарь вам в личку!", ct: ct);
+            await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+
+            _logger.LogInformation(BotConstants.CallbackHandlerLogs.StartMenuFreeTime, userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Не удалось отправить календарь пользователю {UserId}", userId);
+            await _notificationService.EditTextAsync(callbackQuery, BotConstants.CommandMessages.FreeTimePmFailed, ct: ct);
+            await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+        }
+    }
+
+    /// <summary>
+    /// Обрабатывает кнопку "Часовой пояс" из меню /start.
+    /// </summary>
+    private async Task HandleStartMenuTimeZoneAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        var keyboard = new InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton.WithCallbackData("UTC -1", $"{BotConstants.CallbackPrefixes.SetTimeZone}-1"),
+                InlineKeyboardButton.WithCallbackData("UTC +0", $"{BotConstants.CallbackPrefixes.SetTimeZone}0"),
+                InlineKeyboardButton.WithCallbackData("UTC +1", $"{BotConstants.CallbackPrefixes.SetTimeZone}1")
+            ],
+            [
+                InlineKeyboardButton.WithCallbackData("UTC +2", $"{BotConstants.CallbackPrefixes.SetTimeZone}2"),
+                InlineKeyboardButton.WithCallbackData("UTC +3 (МСК)", $"{BotConstants.CallbackPrefixes.SetTimeZone}3"),
+                InlineKeyboardButton.WithCallbackData("UTC +4 (ИЖ)", $"{BotConstants.CallbackPrefixes.SetTimeZone}4")
+            ],
+            [
+                InlineKeyboardButton.WithCallbackData("UTC +5", $"{BotConstants.CallbackPrefixes.SetTimeZone}5"),
+                InlineKeyboardButton.WithCallbackData("UTC +6", $"{BotConstants.CallbackPrefixes.SetTimeZone}6"),
+                InlineKeyboardButton.WithCallbackData("UTC +7", $"{BotConstants.CallbackPrefixes.SetTimeZone}7")
+            ]
+        ]);
+
+        await _notificationService.EditTextAsync(callbackQuery, BotConstants.CommandMessages.TimeZonePrompt, keyboard, ct);
+        await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+
+        _logger.LogInformation(BotConstants.CallbackHandlerLogs.StartMenuTimeZone, userId);
+    }
+
+    /// <summary>
+    /// Обрабатывает кнопку "Статус" из меню /start.
+    /// </summary>
+    private async Task HandleStartMenuStatusAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        var player = await GetPlayerWithGroupsAsync(userId, ct);
+        if (player is null || !player.Groups.Any())
+        {
+            await _notificationService.EditTextAsync(callbackQuery, BotConstants.CommandMessages.NoGroupsForStatus, ct: ct);
+            await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+            return;
+        }
+
+        var groups = player.Groups.ToList();
+        var statusText = new System.Text.StringBuilder();
+        statusText.AppendLine(BotConstants.CommandMessages.StatusTitle);
+
+        foreach (var group in groups)
+        {
+            var freshGroup = await Db.Groups
+                .Include(g => g.Players)
+                .FirstOrDefaultAsync(g => g.Id == group.Id, ct);
+
+            if (freshGroup == null)
+                continue;
+
+            statusText.AppendLine($"👥 **{freshGroup.Name}**");
+
+            if (freshGroup.CurrentSessionUtc.HasValue)
+            {
+                var localTime = ConvertUtcToLocal(freshGroup.CurrentSessionUtc.Value, player.TimeZoneOffset);
+                statusText.AppendLine(string.Format(BotConstants.CommandMessages.StatusSessionLine, localTime.ToString(BotConstants.DateFormats.FullLocalTimeFormat)));
+                statusText.AppendLine(string.Format(BotConstants.CommandMessages.StatusStatusLine, freshGroup.SessionStatus));
+                statusText.AppendLine(string.Format(BotConstants.CommandMessages.StatusConfirmedLine, freshGroup.ConfirmedPlayerIds.Count, freshGroup.Players.Count));
+            }
+            else
+            {
+                statusText.AppendLine(BotConstants.CommandMessages.StatusWaitingLine);
+                statusText.AppendLine(string.Format(BotConstants.CommandMessages.StatusVotingLine, freshGroup.FinishedVotingPlayerIds.Count, freshGroup.Players.Count));
+            }
+
+            statusText.AppendLine();
+        }
+
+        await _notificationService.EditTextAsync(callbackQuery, statusText.ToString(), ct: ct);
+        await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+
+        _logger.LogInformation(BotConstants.CallbackHandlerLogs.StartMenuStatus, userId);
+    }
+
+    /// <summary>
+    /// Обрабатывает кнопку "Группы" из меню /start (для админов).
+    /// </summary>
+    private async Task HandleStartMenuJoinAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        if (!IsAdmin(userId))
+        {
+            await _notificationService.AnswerCallbackAsync(callbackQuery, BotConstants.AdminMessages.AdminOnlyAction, true, ct);
+            return;
+        }
+
+        var groups = await Db.Groups.ToListAsync(ct);
+        if (groups.Count == 0)
+        {
+            await _notificationService.EditTextAsync(callbackQuery, BotConstants.CommandMessages.NoGroupsToJoin, ct: ct);
+            await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+            return;
+        }
+
+        var buttons = groups.Select(g =>
+        {
+            if (g.Name != null)
+                return (List<InlineKeyboardButton>)[InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.JoinGroup}{g.Id}")];
+            return null;
+        });
+
+        await _notificationService.EditTextAsync(callbackQuery, BotConstants.CommandMessages.JoinGroupPrompt, new InlineKeyboardMarkup(buttons!), ct);
+        await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+
+        _logger.LogInformation(BotConstants.CallbackHandlerLogs.StartMenuJoin, userId);
+    }
+
+    /// <summary>
+    /// Обрабатывает кнопку "Планирование" из меню /start (для админов).
+    /// </summary>
+    private async Task HandleStartMenuPlanAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        if (!IsAdmin(userId))
+        {
+            await _notificationService.AnswerCallbackAsync(callbackQuery, BotConstants.AdminMessages.AdminOnlyPlanning, true, ct);
+            return;
+        }
+
+        var groups = await Db.Groups.ToListAsync(ct);
+        if (groups.Count == 0)
+        {
+            await _notificationService.EditTextAsync(callbackQuery, BotConstants.CommandMessages.NoGroupsForPlan, ct: ct);
+            await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+            return;
+        }
+
+        var buttons = groups.Select(g =>
+        {
+            if (g.Name != null)
+                return (List<InlineKeyboardButton>)[InlineKeyboardButton.WithCallbackData(g.Name, $"{BotConstants.CallbackPrefixes.StartPlan}{g.Id}")];
+            return null;
+        });
+
+        await _notificationService.EditTextAsync(callbackQuery, BotConstants.CommandMessages.PlanPrompt, new InlineKeyboardMarkup(buttons!), ct);
+        await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+
+        _logger.LogInformation(BotConstants.CallbackHandlerLogs.StartMenuPlan, userId);
+    }
+
+    /// <summary>
+    /// Обрабатывает кнопку "Помощь" из меню /start.
+    /// </summary>
+    private async Task HandleStartMenuHelpAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        var isAdmin = IsAdmin(userId);
+        var commands = new System.Text.StringBuilder();
+        commands.AppendLine(BotConstants.Commands.CommandsList);
+
+        if (isAdmin)
+        {
+            commands.AppendLine(BotConstants.Commands.AdminCommandsList);
+            commands.AppendLine(BotConstants.Commands.ImportantNote);
+        }
+
+        commands.AppendLine(BotConstants.Commands.InDevelopment);
+
+        var keyboard = CreateStartCommandKeyboard(isAdmin);
+
+        await _notificationService.EditTextAsync(callbackQuery, BotConstants.PlayerMessages.WelcomePlayer + commands, keyboard, ct);
+        await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+
+        _logger.LogInformation(BotConstants.CallbackHandlerLogs.StartMenuHelp, userId);
+    }
+
+    /// <summary>
+    /// Создаёт клавиатуру для меню /start.
+    /// </summary>
+    private static InlineKeyboardMarkup CreateStartCommandKeyboard(bool isAdmin)
+    {
+        var buttons = new List<InlineKeyboardButton[]>
+        {
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonFreeTime, BotConstants.CallbackPrefixes.StartMenuFree),
+                InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonTimeZone, BotConstants.CallbackPrefixes.StartMenuTimeZone),
+                InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonStatus, BotConstants.CallbackPrefixes.StartMenuStatus)
+            }
+        };
+
+        if (isAdmin)
+        {
+            buttons.Add(new[]
+            {
+                InlineKeyboardButton.WithCallbackData("👥 Группы", BotConstants.CallbackPrefixes.StartMenuJoin),
+                InlineKeyboardButton.WithCallbackData("📅 Планирование", BotConstants.CallbackPrefixes.StartMenuPlan)
+            });
+        }
+
+        buttons.Add(new[]
+        {
+            InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonHelp, BotConstants.CallbackPrefixes.StartMenuHelp)
+        });
+
+        return new InlineKeyboardMarkup(buttons);
+    }
+
+    /// <summary>
+    /// Обрабатывает кнопку показа меню помощи.
+    /// </summary>
+    private async Task HandleShowHelpMenuAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        var isAdmin = IsAdmin(userId);
+        var keyboard = CreateHelpKeyboard(isAdmin);
+
+        await _notificationService.EditTextAsync(callbackQuery, BotConstants.PlayerMessages.HelpText, keyboard, ct);
+        await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+
+        _logger.LogInformation(BotConstants.CallbackHandlerLogs.HelpMenuShown, userId);
+    }
+
+    /// <summary>
+    /// Показывает меню помощи после завершения действия.
+    /// </summary>
+    private async Task ShowHelpMenuAfterActionAsync(CallbackQuery callbackQuery, long userId, CancellationToken ct)
+    {
+        var isAdmin = IsAdmin(userId);
+        var keyboard = CreateHelpKeyboard(isAdmin);
+
+        await _notificationService.EditTextAsync(callbackQuery, BotConstants.PlayerMessages.HelpText, keyboard, ct);
+        await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
+
+        _logger.LogInformation(BotConstants.CallbackHandlerLogs.ActionCompletedShowHelp, userId);
+    }
+
+    /// <summary>
+    /// Создаёт клавиатуру для меню помощи.
+    /// </summary>
+    private static InlineKeyboardMarkup CreateHelpKeyboard(bool isAdmin)
+    {
+        var buttons = new List<InlineKeyboardButton[]>
+        {
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonFreeTime, BotConstants.CallbackPrefixes.StartMenuFree),
+                InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonTimeZone, BotConstants.CallbackPrefixes.StartMenuTimeZone),
+                InlineKeyboardButton.WithCallbackData(BotConstants.UiTexts.ButtonStatus, BotConstants.CallbackPrefixes.StartMenuStatus)
+            }
+        };
+
+        if (isAdmin)
+        {
+            buttons.Add(new[]
+            {
+                InlineKeyboardButton.WithCallbackData("👥 Группы", BotConstants.CallbackPrefixes.StartMenuJoin),
+                InlineKeyboardButton.WithCallbackData("📅 Планирование", BotConstants.CallbackPrefixes.StartMenuPlan)
+            });
+        }
+
+        return new InlineKeyboardMarkup(buttons);
     }
 
     /// <summary>
