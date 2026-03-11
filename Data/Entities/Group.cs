@@ -15,30 +15,35 @@ public sealed class Group
     /// </summary>
     [Key]
     public int Id { get; init; }
-    
+
     public DateTime? CurrentSessionUtc { get; set; }
-    
+
     /// <summary>
     /// Список TelegramId игроков, подтвердивших участие (RSVP Yes).
     /// </summary>
     public List<long> ConfirmedPlayerIds { get; set; } = [];
-    
+
     /// <summary>
     /// Список TelegramId игроков, отказавшихся от участия (RSVP No).
     /// </summary>
     public List<long> DeclinedPlayerIds { get; set; } = [];
-    
+
     /// <summary>
     /// Список TelegramId игроков, нажавших кнопку "Завершить заполнение" при сборе расписания.
     /// Используется для отслеживания готовности группы к авто-планированию.
     /// </summary>
     public List<long> FinishedVotingPlayerIds { get; set; } = [];
-    
+
     /// <summary>
-    /// Статус сессии: Pending (ожидание ответов), Confirmed (подтверждена), Cancelled (отменена).
+    /// Список TelegramId администраторов, состоящих в данной группе.
+    /// </summary>
+    public List<long> AdminIds { get; set; } = [];
+
+    /// <summary>
+    /// Статус сессии: Pending (ожидание ответов), Confirmed (подтверждена), Cancelled (отменена), Rescheduled (перепланирована).
     /// </summary>
     public SessionStatus SessionStatus { get; set; } = SessionStatus.Pending;
-    
+
     /// <summary>
     /// Отображаемое название группы (например, "Кампания Драконьего Копья").
     /// </summary>
@@ -47,56 +52,55 @@ public sealed class Group
     /// </remarks>
     [StringLength(100, MinimumLength = 1, ErrorMessage = "Название группы должно содержать от 1 до 100 символов")]
     public string? Name { get; init; } = string.Empty;
-    
+
     /// <summary>
     /// Идентификатор чата Telegram, к которому привязана группа.
     /// Используется для отправки уведомлений и команд в нужный чат.
     /// </summary>
     [Required]
     public long TelegramChatId { get; init; }
-    
+
     /// <summary>
     /// Текущее состояние группы в жизненном цикле планирования.
     /// По умолчанию — <see cref="GroupState.Idle"/>.
     /// </summary>
     public GroupState State { get; set; } = GroupState.Idle;
-    
+
     /// <summary>
     /// Порядок выбора группы в интерфейсе (для сортировки при переключении).
     /// Меньшее значение означает более высокий приоритет отображения.
     /// </summary>
     public int SelectionOrder { get; init; }
-    
+
     /// <summary>
     /// Дата и время последней проведённой игровой сессии.
     /// Используется для аналитики и рекомендаций по планированию.
     /// </summary>
     public DateTime? LastGameDate { get; set; }
-    
+
     /// <summary>
     /// Дата и время создания записи группы.
     /// </summary>
     public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
-    
+
     /// <summary>
     /// Дата и время последнего обновления записи.
     /// </summary>
     public DateTime? UpdatedAt { get; set; }
-    
+
     /// <summary>
     /// Коллекция игроков, состоящих в данной группе.
     /// Настраивается как связь многие-ко-многим с <see cref="Player"/>.
     /// </summary>
     public List<Player> Players { get; init; } = [];
-    
+
     /// <summary>
     /// Инициализирует новый экземпляр <see cref="Group"/>.
     /// </summary>
     public Group()
     {
-        
     }
-    
+
     /// <summary>
     /// Инициализирует новый экземпляр <see cref="Group"/> с заданными параметрами.
     /// </summary>
@@ -107,7 +111,7 @@ public sealed class Group
         Name = name ?? throw new ArgumentNullException(nameof(name));
         TelegramChatId = telegramChatId;
     }
-    
+
     /// <summary>
     /// Обновляет метаданные группы: состояние, дату последней игры и время обновления.
     /// </summary>
@@ -119,7 +123,7 @@ public sealed class Group
         LastGameDate = lastGameDate ?? LastGameDate;
         UpdatedAt = DateTime.UtcNow;
     }
-    
+
     /// <summary>
     /// Возвращает строковое представление группы для отладки.
     /// </summary>

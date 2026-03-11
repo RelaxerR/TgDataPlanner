@@ -29,9 +29,9 @@ public abstract class BaseHandler
     protected readonly long MainChatId;
 
     /// <summary>
-    /// Идентификатор администратора для проверки прав доступа.
+    /// Список идентификаторов администраторов для проверки прав доступа.
     /// </summary>
-    protected readonly long AdminId;
+    protected readonly List<long> AdminIds;
 
     /// <summary>
     /// Логгер для записи событий обработчика.
@@ -82,11 +82,28 @@ public abstract class BaseHandler
         }
         MainChatId = mainChatId;
 
-        if (!long.TryParse(config["TelegramBot:AdminId"], out var adminId))
+        // Парсим список администраторов через запятую
+        AdminIds = new List<long>();
+        var adminIdsConfig = config["TelegramBot:AdminIds"];
+        if (!string.IsNullOrWhiteSpace(adminIdsConfig))
         {
-            Logger.LogError("Не удалось распарсить AdminId из конфигурации. Значение: {Value}", config["AdminId"]);
+            var adminIdStrings = adminIdsConfig.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var adminIdString in adminIdStrings)
+            {
+                if (long.TryParse(adminIdString.Trim(), out var adminId))
+                {
+                    AdminIds.Add(adminId);
+                }
+                else
+                {
+                    Logger.LogError("Не удалось распарсить AdminId из конфигурации. Значение: {Value}", adminIdString);
+                }
+            }
         }
-        AdminId = adminId;
+        else
+        {
+            Logger.LogError("AdminIds не настроен в конфигурации");
+        }
     }
 
     #region Методы отправки сообщений
@@ -106,7 +123,6 @@ public abstract class BaseHandler
         CancellationToken ct = default)
     {
         Logger.LogDebug("Отправка сообщения в чат {ChatId}: {TextPreview}", chatId, Truncate(text, 50));
-
         return await BotClient.SendMessage(
             chatId: chatId,
             text: text,
@@ -128,16 +144,14 @@ public abstract class BaseHandler
             Logger.LogWarning("Попытка отправить уведомление в MainChat, но MainChatId не настроен");
             return;
         }
-
         Logger.LogDebug("Системное уведомление в основной чат: {TextPreview}", Truncate(text, 50));
-
         await BotClient.SendMessage(
             chatId: MainChatId,
             text: $"🔔 {text}",
             parseMode: ParseMode.Markdown,
             cancellationToken: ct);
     }
-    
+
     /// <summary>
     /// Отправляет уведомление каждому в группе
     /// </summary>
@@ -155,12 +169,10 @@ public abstract class BaseHandler
                 text: $"🔔 {text}",
                 parseMode: ParseMode.Markdown,
                 cancellationToken: ct);
-            
             Logger.LogDebug("Уведомление для [@{user}]: {TextPreview}", user, Truncate(text, 50));
         }
     }
-    
-    
+
     /// <summary>
     /// Отправляет уведомление каждому в группе
     /// </summary>
@@ -180,7 +192,6 @@ public abstract class BaseHandler
                 parseMode: ParseMode.Markdown,
                 replyMarkup: replyMarkup,
                 cancellationToken: ct);
-            
             Logger.LogDebug("Уведомление для [@{user}]: {TextPreview}", user, Truncate(text, 50));
         }
     }
@@ -204,9 +215,7 @@ public abstract class BaseHandler
             Logger.LogWarning("Попытка редактировать сообщение, но CallbackQuery.Message равен null");
             return;
         }
-
         Logger.LogDebug("Редактирование сообщения {MessageId} в чате {ChatId}", query.Message.MessageId, query.Message.Chat.Id);
-
         await BotClient.EditMessageText(
             chatId: query.Message.Chat.Id,
             messageId: query.Message.MessageId,
@@ -233,7 +242,6 @@ public abstract class BaseHandler
             Logger.LogWarning("Попытка редактировать клавиатуру, но CallbackQuery.Message равен null");
             return;
         }
-
         try
         {
             await BotClient.EditMessageReplyMarkup(
@@ -242,7 +250,7 @@ public abstract class BaseHandler
                 replyMarkup: replyMarkup,
                 cancellationToken: ct);
         }
-        catch (ApiRequestException ex) 
+        catch (ApiRequestException ex)
         {
             // Игнорируем ошибку, если сообщение не изменилось
             if (ex.ErrorCode == 400 && ex.Message.Contains("message is not modified"))
@@ -369,7 +377,17 @@ public abstract class BaseHandler
     /// </summary>
     /// <param name="userId">Идентификатор пользователя Telegram.</param>
     /// <returns>True, если пользователь является администратором.</returns>
-    protected bool IsAdmin(long userId) => userId == AdminId && AdminId != 0;
+    protected bool IsAdmin(long userId) => AdminIds.Contains(userId) && AdminIds.Count > 0;
+
+    /// <summary>
+    /// Получает список администраторов, состоящих в группе.
+    /// </summary>
+    /// <param name="group">Группа для проверки.</param>
+    /// <returns>Список игроков-администраторов в группе.</returns>
+    protected List<Player> GetAdminsInGroup(Group group)
+    {
+        return group.Players.Where(p => AdminIds.Contains(p.TelegramId)).ToList();
+    }
 
     #endregion
 
@@ -385,7 +403,6 @@ public abstract class BaseHandler
     {
         if (string.IsNullOrEmpty(text))
             return string.Empty;
-
         return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }
 

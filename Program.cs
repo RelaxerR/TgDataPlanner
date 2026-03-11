@@ -33,9 +33,9 @@ public static class Program
     private const string MainChatIdKey = "MainChatId";
 
     /// <summary>
-    /// Ключ конфигурации для идентификатора администратора.
+    /// Ключ конфигурации для идентификаторов администраторов (через запятую).
     /// </summary>
-    private const string AdminIdKey = "AdminId";
+    private const string AdminIdsKey = "AdminIds";
 
     /// <summary>
     /// Точка входа в приложение.
@@ -46,10 +46,8 @@ public static class Program
     {
         var builder = CreateHostBuilder(args);
         using var host = builder.Build();
-
         await InitializeDatabaseAsync(host);
         await ValidateConfigurationAsync(host);
-
         await host.RunAsync();
     }
 
@@ -73,11 +71,9 @@ public static class Program
         logging.ClearProviders();
         logging.AddConsole();
         logging.AddDebug();
-
         // Устанавливаем минимальный уровень логирования из конфигурации или по умолчанию
         var minLevel = context.Configuration.GetValue("Logging:LogLevel:Default", LogLevel.Information);
         logging.SetMinimumLevel(minLevel);
-
         // Фильтрация шумных логов от библиотек
         logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
         logging.AddFilter("Telegram.Bot", LogLevel.Warning);
@@ -98,7 +94,6 @@ public static class Program
         {
             var token = context.Configuration[$"{BotConfigSection}:{BotTokenKey}"]
                 ?? throw new InvalidOperationException($"Токен бота не найден в секции '{BotConfigSection}'");
-
             return new TelegramBotClient(token);
         });
 
@@ -107,13 +102,11 @@ public static class Program
         {
             var connectionString = context.Configuration.GetConnectionString("DefaultConnection")
                 ?? BuildDefaultConnectionString();
-
             options.UseSqlite(connectionString, sqlite =>
             {
                 sqlite.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
                 sqlite.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName);
             });
-
             // Только для разработки: подробные логи и чувствительные данные
             if (!context.HostingEnvironment.IsDevelopment())
                 return;
@@ -125,20 +118,16 @@ public static class Program
         // ВАЖНО: регистрировать ДО хендлеров, которые от них зависят
         services.AddScoped<UserService>();
         services.AddScoped<SchedulingService>();
-        
         // 4.1. Регистрация сервиса рекомендаций и планирования
         services.AddScoped<IRecommendationService, RecommendationService>();
         services.AddScoped<SessionPlanningService>();
-
         // 5. Регистрация обработчиков команд (Scoped — создаются на каждое обновление)
         services.AddScoped<CommandHandler>();
         services.AddScoped<CallbackHandler>();
         services.AddScoped<UpdateHandler>();
-
         // 6. Регистрация фоновых служб (Singleton — живут весь жизненный цикл хоста)
         services.AddHostedService<BotBackgroundService>();
         // services.AddHostedService<ReminderService>(); // TODO: реализовать сервис напоминаний
-
         // 7. Дополнительные сервисы (опционально)
         // services.AddHttpClient(); // для будущих внешних API-запросов
     }
@@ -151,7 +140,7 @@ public static class Program
     {
         var token = configuration[$"{BotConfigSection}:{BotTokenKey}"];
         var mainChatId = configuration[$"{BotConfigSection}:{MainChatIdKey}"];
-        var adminId = configuration[$"{BotConfigSection}:{AdminIdKey}"];
+        var adminIds = configuration[$"{BotConfigSection}:{AdminIdsKey}"];
 
         if (string.IsNullOrWhiteSpace(token))
         {
@@ -165,9 +154,9 @@ public static class Program
             Console.WriteLine($"⚠️  Предупреждение: '{BotConfigSection}:{MainChatIdKey}' не настроен. Системные уведомления отключены.");
         }
 
-        if (string.IsNullOrWhiteSpace(adminId))
+        if (string.IsNullOrWhiteSpace(adminIds))
         {
-            Console.WriteLine($"⚠️  Предупреждение: '{BotConfigSection}:{AdminIdKey}' не настроен. Админ-команды будут недоступны.");
+            Console.WriteLine($"⚠️  Предупреждение: '{BotConfigSection}:{AdminIdsKey}' не настроен. Админ-команды будут недоступны.");
         }
     }
 
@@ -178,20 +167,17 @@ public static class Program
     private static async Task InitializeDatabaseAsync(IHost host)
     {
         using var scope = host.Services.CreateScope();
-        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database");;
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database");
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
         try
         {
             logger.LogInformation("Инициализация базы данных...");
-
             // Проверка возможности подключения
             var canConnect = await dbContext.Database.CanConnectAsync();
             if (!canConnect)
             {
                 logger.LogWarning("Не удалось подключиться к БД. Попытка создания...");
             }
-
             // Применение миграций или создание БД
             var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
             var migrations = pendingMigrations as string[] ?? pendingMigrations.ToArray();
@@ -200,7 +186,6 @@ public static class Program
                 logger.LogInformation("Применение {Count} миграций: {Migrations}",
                     migrations.Length,
                     string.Join(", ", migrations));
-
                 await dbContext.Database.MigrateAsync();
                 logger.LogInformation("Миграции успешно применены");
             }
@@ -226,9 +211,8 @@ public static class Program
     private static async Task ValidateConfigurationAsync(IHost host)
     {
         using var scope = host.Services.CreateScope();
-        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("CFG");;
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("CFG");
         var botClient = scope.ServiceProvider.GetRequiredService<ITelegramBotClient>();
-
         try
         {
             // Проверка валидности токена через API Telegram
@@ -250,10 +234,8 @@ public static class Program
     {
         // Ваш оригинальный путь: 3 уровня вверх от bin/Debug/net8.0/
         var dbPath = Path.Combine(AppContext.BaseDirectory, "../../../dnd_planner.db");
-    
         // Преобразуем в абсолютный путь (важно для SQLite!)
         var absolutePath = Path.GetFullPath(dbPath);
-    
         // Создаём директорию, если не существует
         var directory = Path.GetDirectoryName(absolutePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
@@ -261,7 +243,6 @@ public static class Program
             Directory.CreateDirectory(directory);
             Console.WriteLine($"📁 Создана директория: {directory}");
         }
-    
         return $"Data Source={absolutePath};Cache=Shared;Foreign Keys=True;";
     }
 }

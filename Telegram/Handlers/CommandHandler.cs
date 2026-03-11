@@ -171,12 +171,14 @@ public class CommandHandler : BaseHandler
         var welcomeText = isAdmin
             ? "🧙 **Приветствую, Великий Мастер!**\nЯ твой верный помощник в планировании сессий."
             : "🛡 **Привет, Искатель Приключений!**\nЯ помогу твоей группе собраться на следующую игру.";
+
         var commands = new System.Text.StringBuilder();
         commands.AppendLine("\n**Доступные команды:**");
         commands.AppendLine("📅 /free — Отметить свое свободное время (в личке)");
         commands.AppendLine("🌍 /timezone — Настроить свой часовой пояс");
         commands.AppendLine("👥 /join — Вступить в группу (вызывать в чате группы)");
         commands.AppendLine("📊 /status — Проверить статус планирования");
+
         if (isAdmin)
         {
             commands.AppendLine("\n**Команды Мастера:**");
@@ -186,10 +188,13 @@ public class CommandHandler : BaseHandler
             commands.AppendLine("/plan — Найти идеальное время для игры");
             commands.AppendLine("/recommendations — Показать рекомендации (если нет пересечений)");
             commands.AppendLine("/cancel — Отменить активную сессию планирования");
+            commands.AppendLine("\n**Важно:** Для подтверждения сессии требуется 75% игроков + ВСЕ администраторы");
         }
+
         commands.AppendLine("\n**В разработке:**");
         commands.AppendLine("⏳ _Авто-напоминания за 5ч и 1ч до игры_");
         commands.AppendLine("📊 _Статус заполнения времени группой_");
+
         await SendTextAsync(message.Chat.Id, welcomeText + commands, ct: ct);
     }
     /// <summary>
