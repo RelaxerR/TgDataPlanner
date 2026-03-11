@@ -292,85 +292,72 @@ public class CallbackHandler : BaseHandler
         try
         {
             _logger.LogInformation("Запуск сервиса рекомендаций для группы {GroupName}...", group.Name);
-
             var playersAvailability = await BuildPlayersAvailabilityAsync(group, ct);
             _logger.LogDebug("Построено доступности для {Count} игроков", playersAvailability.Count);
-
             foreach (var pa in playersAvailability)
             {
                 _logger.LogDebug("Игрок {PlayerName} (ID={PlayerId}): {SlotsCount} слотов",
                     pa.PlayerName, pa.PlayerId, pa.AvailableSlots.Count);
             }
-
             var recommendationResult = _recommendationService.FindRecommendations(
                 playersAvailability,
                 MinPlanningDurationHours);
-
             _logger.LogInformation("Сервис рекомендаций вернул {OptionsCount} вариантов",
                 recommendationResult.OptionsCount);
-
             if (!recommendationResult.HasRecommendations)
             {
                 _logger.LogWarning("Рекомендации не найдены для группы {GroupName}", group.Name);
-
+                var groupName = group.Name?.Replace("_", "\\_").Replace("*", "\\*") ?? "Неизвестно";
                 await SendTextAsync(
                     AdminId,
-                    $"😔 **Авто-планирование: {group.Name}**\n\n" +
-                    $"К сожалению, общие окна не найдены и рекомендации недоступны.\n\n" +
+                    $"😔 **Авто-планирование: {groupName}**\n" +
+                    $"К сожалению, общие окна не найдены и рекомендации недоступны.\n" +
                     $"💡 Попробуйте:\n" +
                     $"• Попросить игроков добавить больше вариантов\n" +
                     $"• Уменьшить минимальную длительность сессии",
                     ct: ct);
-
                 await NotifyMainChatAsync(
-                    $"😔 **Группа {group.Name}**: не найдено подходящего времени\n\n" +
+                    $"😔 **Группа {groupName}**: не найдено подходящего времени\n" +
                     $"Игрокам будет отправлено уведомление с рекомендациями.",
                     ct: ct);
-
                 await NotifyAllInGroupAsync(
                     group,
-                    $"⚠️ **Не найдено общего времени**\n\n" +
+                    $"⚠️ **Не найдено общего времени**\n" +
                     $"К сожалению, не удалось подобрать время, когда все свободны.\n" +
                     $"Мастер получит рекомендации по оптимизации расписания.",
                     ct: ct);
-
                 return;
             }
-
             var bestOption = recommendationResult.GetBestOption();
             _logger.LogInformation("Лучшая рекомендация: {StartTime} (приоритет {Priority})",
                 bestOption.ProposedStartTime, bestOption.Priority);
-
             var admin = await UserService.GetPlayerAsync(AdminId, ct);
             var localStart = ConvertUtcToLocal(bestOption.ProposedStartTime, admin?.TimeZoneOffset ?? 0);
             var localEnd = ConvertUtcToLocal(bestOption.ProposedEndTime, admin?.TimeZoneOffset ?? 0);
-
             group.CurrentSessionUtc = bestOption.ProposedStartTime;
             group.SessionStatus = SessionStatus.Pending;
             await Db.SaveChangesAsync(ct);
-
             var rsvpKeyboard = new InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton.WithCallbackData("⚔️ ИДУ", $"{CallbackPrefixes.RsvpYes}{group.Id}"),
                     InlineKeyboardButton.WithCallbackData("🚫 НЕ СМОГУ", $"{CallbackPrefixes.RsvpNo}{group.Id}")
                 ]
             ]);
-
+            // Экранируем имена игроков для Markdown
             var attendingPlayersText = bestOption.AttendingPlayerNames != null && bestOption.AttendingPlayerNames.Count > 0
-                ? string.Join(", ", bestOption.AttendingPlayerNames.Select(name => $"@{name}"))
+                ? string.Join(", ", bestOption.AttendingPlayerNames.Select(name => $"@{EscapeMarkdown(name)}"))
                 : "Нет данных";
-
+            var escapedGroupName = group.Name?.Replace("_", "\\_").Replace("*", "\\*") ?? "Неизвестно";
             var announcementText =
-                $"⚔️ **РЕКОМЕНДОВАННОЕ ВРЕМЯ** ⚔️\n\n" +
-                $"🤖 Бот подобрал оптимальное время с учётом доступности.\n\n" +
-                $"👥 Группа: **{group.Name}**\n" +
+                $"⚔️ **РЕКОМЕНДОВАННОЕ ВРЕМЯ** ⚔️\n" +
+                $"🤖 Бот подобрал оптимальное время с учётом доступности.\n" +
+                $"👥 Группа: **{escapedGroupName}**\n" +
                 $"📅 Дата: **{localStart:dd.MM (ddd)}**\n" +
                 $"🕒 Начало: **{localStart:HH:mm}** (по МСК)\n" +
-                $"⏳ Длительность: **{(bestOption.ProposedEndTime - bestOption.ProposedStartTime).TotalHours} ч.**\n\n" +
+                $"⏳ Длительность: **{(bestOption.ProposedEndTime - bestOption.ProposedStartTime).TotalHours} ч.**\n" +
                 $"✅ **Свободны ({bestOption.AttendingPlayersCount}/{bestOption.TotalPlayersCount}):**\n" +
-                $"{attendingPlayersText}\n\n" +
+                $"{attendingPlayersText}\n" +
                 $"❗ Пожалуйста, подтвердите явку кнопками ниже!";
-
             foreach (var player in group.Players)
             {
                 try
@@ -380,7 +367,6 @@ public class CallbackHandler : BaseHandler
                         text: announcementText,
                         replyMarkup: rsvpKeyboard,
                         ct: ct);
-
                     _logger.LogDebug("Рекомендация отправлена игроку {PlayerId}", player.TelegramId);
                 }
                 catch (Exception ex)
@@ -388,28 +374,36 @@ public class CallbackHandler : BaseHandler
                     _logger.LogWarning(ex, "Не удалось отправить рекомендацию игроку {PlayerId}", player.TelegramId);
                 }
             }
-
             await SendTextAsync(
                 AdminId,
-                $"📊 **Рекомендации для {group.Name}**\n\n" +
+                $"📊 **Рекомендации для {escapedGroupName}**\n" +
                 $"✅ Выбран лучший вариант: **{localStart:dd.MM HH:mm}**\n" +
                 $"👥 Участвуют: {bestOption.AttendingPlayersCount}/{bestOption.TotalPlayersCount}\n" +
                 $"✅ Свободны: {attendingPlayersText}",
                 ct: ct);
-
             _logger.LogInformation("Рекомендации успешно отправлены для группы {GroupName}", group.Name);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Критическая ошибка в HandleNoIntersectionsAsync для группы {GroupName}", group.Name);
-
+            var escapedGroupName = group.Name?.Replace("_", "\\_").Replace("*", "\\*") ?? "Неизвестно";
             await SendTextAsync(
                 AdminId,
-                $"❌ **Ошибка авто-планирования: {group.Name}**\n\n" +
+                $"❌ **Ошибка авто-планирования: {escapedGroupName}**\n" +
                 $"Произошла непредвиденная ошибка при поиске рекомендаций.\n" +
-                $"Детали: {ex.Message}",
+                $"Детали: {ex.Message.Replace("_", "\\_").Replace("*", "\\*")}",
                 ct: ct);
         }
+    }
+
+    /// <summary>
+    /// Экранирует спецсимволы Markdown в тексте (для совместимости с ParseMode.Markdown).
+    /// </summary>
+    private static string EscapeMarkdown(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+        return text.Replace("_", "\\_").Replace("*", "\\*").Replace("`", "\\`").Replace("[", "\\[");
     }
     /// <summary>
     /// Строит список доступности игроков для сервиса рекомендаций.

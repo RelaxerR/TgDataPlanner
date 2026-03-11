@@ -117,7 +117,11 @@ public class RecommendationOption
         {
             return "Нет участников";
         }
-
-        return string.Join(", ", AttendingPlayerNames.Select(name => $"@{name}"));
+        // Экранируем спецсимволы Markdown в именах пользователей
+        return string.Join(", ", AttendingPlayerNames.Select(name =>
+        {
+            var escapedName = name.Replace("_", "\\_").Replace("*", "\\*").Replace("`", "\\`").Replace("[", "\\[");
+            return $"@{escapedName}";
+        }));
     }
 }
