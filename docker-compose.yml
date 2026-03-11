@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  tgbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tg-data-planner
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Moscow
+      - DOTNET_ENVIRONMENT=Production
+    volumes:
+      - bot-data:/app/data
+      - ./appsettings.Production.json:/app/appsettings.Production.json:ro
+    networks:
+      - bot-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  bot-data:
+    driver: local
+
+networks:
+  bot-network:
+    driver: bridge
