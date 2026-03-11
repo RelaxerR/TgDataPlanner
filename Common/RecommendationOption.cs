@@ -1,5 +1,4 @@
 namespace TgDataPlanner.Common;
-
 using System;
 using System.Collections.Generic;
 
@@ -53,9 +52,14 @@ public class RecommendationOption
     /// <summary>
     /// Процент игроков, которые смогут присутствовать в этом варианте
     /// </summary>
-    public double AttendancePercentage => TotalPlayersCount > 0 
-        ? (double)AttendingPlayersCount / TotalPlayersCount * 100 
+    public double AttendancePercentage => TotalPlayersCount > 0
+        ? (double)AttendingPlayersCount / TotalPlayersCount * 100
         : 0;
+
+    /// <summary>
+    /// Список имён игроков, которые смогут присутствовать в этом варианте
+    /// </summary>
+    public List<string> AttendingPlayerNames { get; set; } = new List<string>();
 
     /// <summary>
     /// Возвращает человекочитаемое описание приоритета
@@ -102,5 +106,18 @@ public class RecommendationOption
         }
 
         return string.Join(", ", shifts);
+    }
+
+    /// <summary>
+    /// Возвращает список присутствующих игроков в формате Markdown
+    /// </summary>
+    public string GetAttendingPlayersMarkdown()
+    {
+        if (AttendingPlayerNames.Count == 0)
+        {
+            return "Нет участников";
+        }
+
+        return string.Join(", ", AttendingPlayerNames.Select(name => $"@{name}"));
     }
 }

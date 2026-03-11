@@ -1,5 +1,4 @@
 namespace TgDataPlanner.Services;
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,20 +7,29 @@ using TgDataPlanner.Common;
 /// <summary>
 /// Сервис рекомендаций для планирования игровых сессий.
 /// Используется когда прямое пересечение доступности всех игроков не найдено.
-/// Философия: лучше сдвинуть время всем немного, но чтобы участвовали все.
+/// Философия: показать окна с максимальным количеством участников.
 /// </summary>
 public class RecommendationService : IRecommendationService
 {
     /// <summary>
+    /// Минимальная длительность окна в часах (для первого прохода).
+    /// </summary>
+    private const int MinDurationHours = 3;
+
+    /// <summary>
+    /// Минимальная длительность окна в часах (для второго прохода, если не найдено).
+    /// </summary>
+    private const int FallbackDurationHours = 2;
+
+    /// <summary>
     /// Находит варианты планирования сессии на основе доступности игроков.
-    /// Варианты сортируются по приоритету согласно философии:
-    /// "Лучше сдвинуть время всем немного, но чтобы участвовали все".
+    /// Возвращает окна с максимальным количеством игроков.
     /// </summary>
     public RecommendationResult FindRecommendations(
         IEnumerable<PlayerAvailability> players,
         double sessionDurationHours,
         double searchWindowHours = 168,
-        int timeStepMinutes = 30)
+        int timeStepMinutes = 60)
     {
         var result = new RecommendationResult();
         var playersList = players.ToList();
@@ -33,93 +41,28 @@ public class RecommendationService : IRecommendationService
 
         var searchStartTime = DateTime.UtcNow;
         var searchEndTime = searchStartTime.AddHours(searchWindowHours);
-        var sessionDuration = TimeSpan.FromHours(sessionDurationHours);
         var timeStep = TimeSpan.FromMinutes(timeStepMinutes);
 
-        // Приоритет 1: Все участвуют, сдвиг до 1 часа
-        var priority1Options = FindOptionsWithPriority(
+        // Сначала ищем окна с минимальной длительностью (3 часа)
+        var options = FindAllWindowsWithMaxPlayers(
             playersList,
             searchStartTime,
             searchEndTime,
             timeStep,
-            sessionDuration,
-            RecommendationPriority.AllAttendShift1h,
-            maxShiftHours: 1.0,
-            allowExclusions: false,
-            maxExcludedShiftHours: 0);
+            MinDurationHours);
 
-        result.AddOptions(priority1Options);
+        // Если не найдено, пробуем 2 часа
+        if (options.Count == 0)
+        {
+            options = FindAllWindowsWithMaxPlayers(
+                playersList,
+                searchStartTime,
+                searchEndTime,
+                timeStep,
+                FallbackDurationHours);
+        }
 
-        // Приоритет 2: Один не участвует, без сдвига времени
-        var priority2Options = FindOptionsWithPriority(
-            playersList,
-            searchStartTime,
-            searchEndTime,
-            timeStep,
-            sessionDuration,
-            RecommendationPriority.ExcludeOneNoShift,
-            maxShiftHours: 0,
-            allowExclusions: true,
-            maxExcludedShiftHours: 0);
-
-        result.AddOptions(priority2Options);
-
-        // Приоритет 3: Все участвуют, сдвиг до 2 часов
-        var priority3Options = FindOptionsWithPriority(
-            playersList,
-            searchStartTime,
-            searchEndTime,
-            timeStep,
-            sessionDuration,
-            RecommendationPriority.AllAttendShift2h,
-            maxShiftHours: 2.0,
-            allowExclusions: false,
-            maxExcludedShiftHours: 0);
-
-        result.AddOptions(priority3Options);
-
-        // Приоритет 4: Один не участвует, сдвиг до 1 часа
-        var priority4Options = FindOptionsWithPriority(
-            playersList,
-            searchStartTime,
-            searchEndTime,
-            timeStep,
-            sessionDuration,
-            RecommendationPriority.ExcludeOneShift1h,
-            maxShiftHours: 1.0,
-            allowExclusions: true,
-            maxExcludedShiftHours: 0);
-
-        result.AddOptions(priority4Options);
-
-        // Приоритет 5: Все участвуют, сдвиг до 3 часов
-        var priority5Options = FindOptionsWithPriority(
-            playersList,
-            searchStartTime,
-            searchEndTime,
-            timeStep,
-            sessionDuration,
-            RecommendationPriority.AllAttendShift3h,
-            maxShiftHours: 3.0,
-            allowExclusions: false,
-            maxExcludedShiftHours: 0);
-
-        result.AddOptions(priority5Options);
-
-        // Приоритет 6: Один не участвует, сдвиг до 2 часов
-        var priority6Options = FindOptionsWithPriority(
-            playersList,
-            searchStartTime,
-            searchEndTime,
-            timeStep,
-            sessionDuration,
-            RecommendationPriority.ExcludeOneShift2h,
-            maxShiftHours: 2.0,
-            allowExclusions: true,
-            maxExcludedShiftHours: 0);
-
-        result.AddOptions(priority6Options);
-
+        result.AddOptions(options);
         return result;
     }
 
@@ -130,12 +73,11 @@ public class RecommendationService : IRecommendationService
         IEnumerable<PlayerAvailability> players,
         double sessionDurationHours)
     {
-        return FindRecommendations(players, sessionDurationHours, searchWindowHours: 168, timeStepMinutes: 30);
+        return FindRecommendations(players, sessionDurationHours, searchWindowHours: 168, timeStepMinutes: 60);
     }
 
     /// <summary>
-    /// Проверяет, может ли указанный игрок присутствовать в предложенное время
-    /// с учетом допустимого сдвига от его предпочтений.
+    /// Проверяет, может ли указанный игрок присутствовать в предложенное время.
     /// </summary>
     public (bool CanAttend, double TimeShift) CheckPlayerAvailability(
         PlayerAvailability player,
@@ -143,19 +85,8 @@ public class RecommendationService : IRecommendationService
         DateTime proposedEnd,
         double maxShiftHours)
     {
-        var timeShift = CalculateTimeShift(player, proposedStart);
-
-        // Проверяем сдвиг времени
-        if (Math.Abs(timeShift) > maxShiftHours)
-        {
-            return (false, timeShift);
-        }
-
-        // Проверяем доступность в предложенное время
-        var isAvailable = player.AvailableSlots.Any(slot =>
-            slot.FullyCovers(proposedStart, proposedEnd));
-
-        return (isAvailable, timeShift);
+        var isAvailable = CanCoverTimeRange(player.AvailableSlots, proposedStart, proposedEnd);
+        return (isAvailable, 0);
     }
 
     /// <summary>
@@ -173,156 +104,119 @@ public class RecommendationService : IRecommendationService
     }
 
     /// <summary>
-    /// Находит варианты с указанным приоритетом и параметрами.
+    /// Находит все окна с максимальным количеством игроков.
     /// </summary>
-    private List<RecommendationOption> FindOptionsWithPriority(
+    private List<RecommendationOption> FindAllWindowsWithMaxPlayers(
         List<PlayerAvailability> players,
         DateTime searchStartTime,
         DateTime searchEndTime,
         TimeSpan timeStep,
-        TimeSpan sessionDuration,
-        RecommendationPriority priority,
-        double maxShiftHours,
-        bool allowExclusions,
-        double maxExcludedShiftHours)
+        int durationHours)
     {
-        var options = new List<RecommendationOption>();
-        var maxOptionsPerPriority = 5; // Ограничиваем количество вариантов на приоритет
+        var allOptions = new List<RecommendationOption>();
+        var sessionDuration = TimeSpan.FromHours(durationHours);
 
+        // Перебираем все возможные окна
         for (var currentTime = searchStartTime; currentTime < searchEndTime; currentTime += timeStep)
         {
             var proposedEnd = currentTime + sessionDuration;
+            var option = EvaluateTimeSlot(players, currentTime, proposedEnd, durationHours);
 
-            // Проверяем каждый возможный вариант исключений
-            var exclusionVariants = allowExclusions
-                ? GenerateExclusionVariants(players.Count)
-                : new List<List<int>> { new List<int>() };
-
-            foreach (var excludedIndices in exclusionVariants)
+            if (option != null && option.AttendingPlayersCount > 0)
             {
-                var option = EvaluateTimeSlot(
-                    players,
-                    currentTime,
-                    proposedEnd,
-                    excludedIndices,
-                    priority,
-                    maxShiftHours,
-                    maxExcludedShiftHours);
-
-                if (option != null)
-                {
-                    options.Add(option);
-
-                    if (options.Count >= maxOptionsPerPriority)
-                    {
-                        return options;
-                    }
-                }
-            }
-
-            // Если нашли варианты для этого времени с полным составом, не ищем с исключениями
-            if (allowExclusions && options.Any(o => o.ExcludedPlayerIds.Count == 0))
-            {
-                continue;
+                allOptions.Add(option);
             }
         }
 
-        return options;
+        // Находим максимальное количество игроков
+        var maxPlayers = allOptions.Any() ? allOptions.Max(o => o.AttendingPlayersCount) : 0;
+
+        // Оставляем только окна с максимальным количеством игроков
+        var bestOptions = allOptions
+            .Where(o => o.AttendingPlayersCount == maxPlayers)
+            .OrderBy(o => o.ProposedStartTime)
+            .Take(5)
+            .ToList();
+
+        return bestOptions;
     }
 
     /// <summary>
-    /// Генерирует варианты исключений игроков для перебора.
+    /// Проверяет, могут ли доступные слоты игрока покрыть предложенный временной диапазон.
+    /// Учитывает несколько смежных слотов (например, 3 слота по 1 часу для 3-часовой сессии).
     /// </summary>
-    private List<List<int>> GenerateExclusionVariants(int playerCount)
+    private bool CanCoverTimeRange(List<TimeSlot> availableSlots, DateTime rangeStart, DateTime rangeEnd)
     {
-        var variants = new List<List<int>>();
-
-        // Вариант без исключений
-        variants.Add(new List<int>());
-
-        // Варианты с исключением одного игрока
-        for (int i = 0; i < playerCount; i++)
+        if (availableSlots.Count == 0)
         {
-            variants.Add(new List<int> { i });
+            return false;
         }
 
-        return variants;
+        // Сортируем слоты по времени
+        var sortedSlots = availableSlots.OrderBy(s => s.Start).ToList();
+
+        // Ищем непрерывную последовательность слотов, покрывающую диапазон
+        var coveredStart = rangeStart;
+        var coveredEnd = rangeStart;
+
+        foreach (var slot in sortedSlots)
+        {
+            // Если слот начинается там, где мы закончили покрытие (или раньше)
+            if (slot.Start <= coveredEnd && slot.End > coveredEnd)
+            {
+                coveredEnd = slot.End;
+            }
+
+            // Если покрыли весь диапазон
+            if (coveredEnd >= rangeEnd)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
-    /// Оценивает временной слот и создает вариант рекомендации если он подходит.
+    /// Оценивает временной слот и создает вариант рекомендации.
     /// </summary>
     private RecommendationOption EvaluateTimeSlot(
         List<PlayerAvailability> players,
         DateTime proposedStart,
         DateTime proposedEnd,
-        List<int> excludedIndices,
-        RecommendationPriority priority,
-        double maxShiftHours,
-        double maxExcludedShiftHours)
+        int durationHours)
     {
         var option = new RecommendationOption
         {
             ProposedStartTime = proposedStart,
             ProposedEndTime = proposedEnd,
-            Priority = priority,
-            TotalPlayersCount = players.Count
+            Priority = RecommendationPriority.AllAttendShift1h,
+            TotalPlayersCount = players.Count,
+            AttendingPlayersCount = 0
         };
 
-        var attendingCount = 0;
-        var allAttendingWithinShift = true;
+        var attendingPlayerIds = new List<long>();
+        var attendingPlayerNames = new List<string>();
 
-        for (int i = 0; i < players.Count; i++)
+        foreach (var player in players)
         {
-            var player = players[i];
-            var isExcluded = excludedIndices.Contains(i);
+            var isAvailable = CanCoverTimeRange(player.AvailableSlots, proposedStart, proposedEnd);
 
-            if (isExcluded)
+            if (isAvailable)
             {
-                option.ExcludedPlayerIds.Add(player.PlayerId);
-                continue;
+                attendingPlayerIds.Add(player.PlayerId);
+                attendingPlayerNames.Add(player.PlayerName);
             }
-
-            var availabilityCheck = CheckPlayerAvailability(
-                player,
-                proposedStart,
-                proposedEnd,
-                maxShiftHours);
-
-            if (!availabilityCheck.CanAttend)
-            {
-                allAttendingWithinShift = false;
-                break;
-            }
-
-            option.PlayerTimeShifts[player.PlayerId] = availabilityCheck.TimeShift;
-            attendingCount++;
         }
 
-        if (!allAttendingWithinShift)
-        {
-            return null;
-        }
+        option.AttendingPlayersCount = attendingPlayerIds.Count;
+        option.ExcludedPlayerIds = players
+            .Select(p => p.PlayerId)
+            .Except(attendingPlayerIds)
+            .ToList();
 
-        // Проверяем что хотя бы один игрок участвует
-        if (attendingCount == 0)
-        {
-            return null;
-        }
-
-        // Для приоритетов с исключениями проверяем что действительно есть исключенные
-        if (priority.ToString().Contains("ExcludeOne") && option.ExcludedPlayerIds.Count == 0)
-        {
-            return null;
-        }
-
-        // Для приоритетов без исключений проверяем что все участвуют
-        if (priority.ToString().Contains("AllAttend") && option.ExcludedPlayerIds.Count > 0)
-        {
-            return null;
-        }
-
-        option.AttendingPlayersCount = attendingCount;
+        // Сохраняем имена присутствующих игроков
+        option.AttendingPlayerNames = attendingPlayerNames;
 
         return option;
     }
