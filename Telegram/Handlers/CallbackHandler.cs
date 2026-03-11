@@ -18,6 +18,7 @@ namespace TgDataPlanner.Telegram.Handlers;
 /// </summary>
 public class CallbackHandler : BaseHandler
 {
+    private readonly SessionPlanningService _planningService;
     private readonly ILogger<CallbackHandler> _logger;
 
     /// <summary>
@@ -59,16 +60,19 @@ public class CallbackHandler : BaseHandler
     /// <param name="logger">Логгер для записи событий.</param>
     /// <param name="db">Контекст базы данных</param>
     /// <param name="userService">Сервис управления пользователями.</param>
-    /// <param name="schedulingService">Сервис планирования.</param>
+    /// <param name="schedulingService">Сервис расписания.</param>
+    /// <param name="planningService">Сервис планирования.</param>
     public CallbackHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
         ILogger<CallbackHandler> logger,
         AppDbContext db,
         UserService userService,
-        SchedulingService schedulingService)
+        SchedulingService schedulingService,
+        SessionPlanningService planningService)
         : base(config, botClient, logger, db, userService, schedulingService)
     {
+        _planningService = planningService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 

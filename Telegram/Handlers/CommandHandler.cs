@@ -19,6 +19,8 @@ namespace TgDataPlanner.Telegram.Handlers;
 /// </summary>
 public class CommandHandler : BaseHandler
 {
+    private readonly SessionPlanningService _planningService;
+    private readonly IRecommendationService _recommendationService;
     private readonly ILogger<CommandHandler> _logger;
 
     /// <summary>
@@ -45,16 +47,22 @@ public class CommandHandler : BaseHandler
     /// <param name="logger">Логгер для записи событий.</param>
     /// <param name="db">Контекст базы данных</param>
     /// <param name="userService">Сервис управления пользователями.</param>
-    /// <param name="schedulingService">Сервис планирования.</param>
+    /// <param name="schedulingService">Сервис расписания.</param>
+    /// <param name="planningService">Сервис планирования игр.</param>
+    /// <param name="recommendationService">Сервис рекомендаций.</param>
     public CommandHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
         ILogger<CommandHandler> logger,
         AppDbContext db,
         UserService userService,
-        SchedulingService schedulingService)
+        SchedulingService schedulingService,
+        SessionPlanningService planningService,
+        IRecommendationService recommendationService) 
         : base(config, botClient, logger, db, userService, schedulingService)
     {
+        _planningService = planningService;
+        _recommendationService = recommendationService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 

@@ -125,6 +125,10 @@ public static class Program
         // ВАЖНО: регистрировать ДО хендлеров, которые от них зависят
         services.AddScoped<UserService>();
         services.AddScoped<SchedulingService>();
+        
+        // 4.1. Регистрация сервиса рекомендаций и планирования
+        services.AddScoped<IRecommendationService, RecommendationService>();
+        services.AddScoped<SessionPlanningService>();
 
         // 5. Регистрация обработчиков команд (Scoped — создаются на каждое обновление)
         services.AddScoped<CommandHandler>();
