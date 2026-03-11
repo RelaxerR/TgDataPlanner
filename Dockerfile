@@ -5,12 +5,12 @@ WORKDIR /src
 COPY *.csproj ./
 RUN dotnet restore
 
-# Копируем исходный код и собираем проект
+# Копируем исходный код и публикуем
 COPY . ./
 RUN dotnet publish -c Release -o /app/publish
 
-# Финальный образ
-FROM mcr.microsoft.com/dotnet/runtime:8.0 AS final
+# Финальный образ - ВАЖНО: runtime тоже должен быть версии 10.0!
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
