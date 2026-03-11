@@ -32,7 +32,7 @@ public class RecommendationOption
     /// Информация о сдвиге времени для каждого игрока относительно его исходных предпочтений.
     /// Ключ: PlayerId, Значение: сдвиг в часах (положительное - позже, отрицательное - раньше)
     /// </summary>
-    private Dictionary<long, double> PlayerTimeShifts { get; set; } = new Dictionary<long, double>();
+    private Dictionary<long, double> PlayerTimeShifts { get; } = new();
 
     /// <summary>
     /// Максимальный сдвиг времени среди всех участвующих игроков в этом варианте
@@ -43,9 +43,19 @@ public class RecommendationOption
     }
 
     /// <summary>
-    /// Количество игроков, которые смогут присутствовать в этом варианте
+    /// Количество игроков, которые смогут присутствовать в этом варианте (полное покрытие)
     /// </summary>
     public int AttendingPlayersCount { get; set; }
+
+    /// <summary>
+    /// Количество игроков, которые смогут присутствовать частично (частичное покрытие)
+    /// </summary>
+    public int PartialAttendPlayersCount { get; set; }
+
+    /// <summary>
+    /// Общее количество часов покрытия всеми игроками
+    /// </summary>
+    public double TotalCoverageHours { get; set; }
 
     /// <summary>
     /// Общее количество игроков в сессии
@@ -83,7 +93,6 @@ public class RecommendationOption
         {
             return "Без сдвигов";
         }
-
         var shifts = new List<string>();
         foreach (var shift in PlayerTimeShifts)
         {
@@ -100,7 +109,6 @@ public class RecommendationOption
                     break;
             }
         }
-
         return string.Join(", ", shifts);
     }
 
