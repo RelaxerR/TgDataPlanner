@@ -9,8 +9,8 @@ services:
       - TZ=Europe/Moscow
       - DOTNET_ENVIRONMENT=Production
     volumes:
-      - bot-db:/
-      - ./appsettings.Production.json:/appsettings.Production.json:ro
+      - bot-db:/app
+      - ./appsettings.Production.json:/app/appsettings.Production.json:ro
     networks:
       - bot-network
     logging:

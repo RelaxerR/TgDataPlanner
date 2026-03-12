@@ -265,21 +265,34 @@ public static class Program
     }
 
     /// <summary>
-    /// Строит строку подключения к базе данных с вашим оригинальным путём.
+    /// Строит строку подключения к базе данных с путём для Docker/Production.
     /// </summary>
     private static string BuildDefaultConnectionString()
     {
-        // Ваш оригинальный путь: 3 уровня вверх от bin/Debug/net8.0/
-        var dbPath = Path.Combine(AppContext.BaseDirectory, "../../../dnd_planner.db");
+        // Проверяем, запущено ли приложение в Docker/Production
+        var environment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var isProduction = string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase);
+
+        var dbPath =
+            // Production (Docker): используем абсолютный путь в томе /app/
+            isProduction ? "/app/dnd_planner.db" :
+            // Development (локально): ваш оригинальный относительный путь
+            Path.Combine(AppContext.BaseDirectory, "../../../dnd_planner.db");
+
         // Преобразуем в абсолютный путь (важно для SQLite!)
         var absolutePath = Path.GetFullPath(dbPath);
-        // Создаём директорию, если не существует
+
+        // Создаём директорию, если не существует (только для dev-пути)
+        if (isProduction)
+            return $"Data Source={absolutePath};Cache=Shared;Foreign Keys=True;";
+        
         var directory = Path.GetDirectoryName(absolutePath);
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-            Console.WriteLine(string.Format(BotConstants.SystemMessages.DirectoryCreated, directory));
-        }
+        if (string.IsNullOrEmpty(directory) || Directory.Exists(directory))
+            return $"Data Source={absolutePath};Cache=Shared;Foreign Keys=True;";
+        
+        Directory.CreateDirectory(directory);
+        Console.WriteLine(string.Format(BotConstants.SystemMessages.DirectoryCreated, directory));
+
         return $"Data Source={absolutePath};Cache=Shared;Foreign Keys=True;";
     }
 }
