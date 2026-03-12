@@ -9,7 +9,7 @@ services:
       - TZ=Europe/Moscow
       - DOTNET_ENVIRONMENT=Production
     volumes:
-      - bot-data:/app/data
+      - bot-db:/app
       - ./appsettings.Production.json:/app/appsettings.Production.json:ro
     networks:
       - bot-network
@@ -20,9 +20,8 @@ services:
         max-file: "3"
 
 volumes:
-  bot-data:
+  bot-db:
     driver: local
 
 networks:
   bot-network:
-    driver: bridge
