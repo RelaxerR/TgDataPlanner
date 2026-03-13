@@ -177,9 +177,11 @@ public class AppDbContext : DbContext
     /// <returns>Абсолютный путь к файлу .db.</returns>
     private static string GetDatabasePath()
     {
-        var baseDirectory = AppContext.BaseDirectory;
+        var baseDirectory = AppContext.BaseDirectory; // В Docker это /app
+        // Путь: /app/Data/Database/dnd_planner.db
         var relativePath = Path.Combine("Data", "Database", Config.DatabaseFileName);
         var fullPath = Path.Combine(baseDirectory, relativePath);
+    
         var directory = Path.GetDirectoryName(fullPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {

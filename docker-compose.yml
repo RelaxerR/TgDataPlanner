@@ -28,7 +28,7 @@ services:
       - DOTNET_ENVIRONMENT=Production
       - Ollama__BaseUrl=http://ollama:11434  # Внутри Docker-сети используем имя сервиса
     volumes:
-      - bot-db:/app
+      - bot-db:/app/Data
       - ./appsettings.Production.json:/app/appsettings.Production.json:ro
     networks:
       - bot-network
