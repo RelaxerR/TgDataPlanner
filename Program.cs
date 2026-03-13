@@ -275,7 +275,7 @@ public static class Program
 
         var dbPath =
             // Production (Docker): используем абсолютный путь в томе /app/
-            isProduction ? "/app/dnd_planner.db" :
+            isProduction ? "/app/data/dnd_planner.db" :
             // Development (локально): ваш оригинальный относительный путь
             Path.Combine(AppContext.BaseDirectory, "../../../dnd_planner.db");
 
