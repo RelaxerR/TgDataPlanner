@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using TgDataPlanner.AI;
 using TgDataPlanner.Data;
 using TgDataPlanner.Services;
 using static TgDataPlanner.Configuration.BotConstants.SystemMessages;
@@ -44,6 +45,7 @@ public class UpdateHandler : BaseHandler
     /// <param name="schedulingService">Сервис планирования.</param>
     /// <param name="commandHandler">Обработчик текстовых команд.</param>
     /// <param name="callbackHandler">Обработчик нажатий на кнопки.</param>
+    /// <param name="ollamaService">Сервис ИИ</param>
     public UpdateHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
@@ -52,8 +54,9 @@ public class UpdateHandler : BaseHandler
         UserService userService,
         SchedulingService schedulingService,
         CommandHandler commandHandler,
-        CallbackHandler callbackHandler)
-        : base(config, botClient, logger, db, userService, schedulingService)
+        CallbackHandler callbackHandler,
+        OllamaService ollamaService)
+        : base(config, botClient, logger, db, userService, schedulingService, ollamaService)
     {
         _commandHandler = commandHandler ?? throw new ArgumentNullException(nameof(commandHandler));
         _callbackHandler = callbackHandler ?? throw new ArgumentNullException(nameof(callbackHandler));

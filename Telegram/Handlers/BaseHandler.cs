@@ -5,6 +5,7 @@ using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using TgDataPlanner.AI;
 using TgDataPlanner.Common;
 using TgDataPlanner.Data;
 using TgDataPlanner.Data.Entities;
@@ -53,6 +54,11 @@ public abstract class BaseHandler
     /// Сервис планирования для поиска свободных временных окон.
     /// </summary>
     protected readonly SchedulingService SchedulingService;
+    
+    /// <summary>
+    /// Сервис ИИ
+    /// </summary>
+    protected readonly OllamaService OllamaService;
 
     /// <summary>
     /// Инициализирует новый экземпляр <see cref="BaseHandler"/>.
@@ -63,19 +69,22 @@ public abstract class BaseHandler
     /// <param name="db">Контекст базы данных</param>
     /// <param name="userService">Сервис управления пользователями.</param>
     /// <param name="schedulingService">Сервис планирования.</param>
+    /// <param name="ollamaService">Сервис ИИ</param>
     protected BaseHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
         ILogger<BaseHandler> logger,
         AppDbContext db,
         UserService userService,
-        SchedulingService schedulingService)
+        SchedulingService schedulingService,
+        OllamaService ollamaService)
     {
         BotClient = botClient ?? throw new ArgumentNullException(nameof(botClient));
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Db = db ?? throw new ArgumentNullException(nameof(db));
         UserService = userService ?? throw new ArgumentNullException(nameof(userService));
         SchedulingService = schedulingService ?? throw new ArgumentNullException(nameof(schedulingService));
+        OllamaService = ollamaService ?? throw new ArgumentNullException(nameof(ollamaService));
 
         if (!long.TryParse(config["TelegramBot:MainChatId"], out var mainChatId))
         {

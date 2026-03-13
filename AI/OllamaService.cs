@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TgDataPlanner.Configuration;
 
 namespace TgDataPlanner.AI;
 
@@ -40,6 +41,41 @@ public class OllamaService
         {
             _logger.LogDebug("OllamaService инициализирован. BaseAddress: {BaseAddress}, Model: {Model}", _httpClient.BaseAddress, _settings.ModelName);
         }
+    }
+    
+    /// <summary>
+    /// Генерирует персонализированное приветствие для пользователя команды /start.
+    /// Учитывает имя, фамилию, текущую дату и день недели.
+    /// </summary>
+    public async Task<string?> GeneratePersonalizedGreetingAsync(
+        string firstName,
+        string? lastName,
+        string? username,
+        bool isAdmin,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.Now;
+        var dayOfWeek = GetRussianDayOfWeek(now.DayOfWeek);
+        
+        var fullName = string.IsNullOrWhiteSpace(lastName) 
+            ? firstName 
+            : $"{firstName} {lastName}";
+
+        var roleDescription = isAdmin 
+            ? BotConstants.UiTexts.AiRoleMasterHelper 
+            : BotConstants.UiTexts.AiRolePlayerGuide;
+
+        var systemPrompt = $@"{BotConstants.UiTexts.AiRoleAssistant}\n" +
+            "{roleDescription}\n" +
+            "Сейчас на дворе {dayOfWeek}, {now:dd MMMM yyyy} года, время {now:HH:mm}.\n" +
+            "Пользователь только что написал команду /start.\n" +
+            "Твоя задача: кратко (2-3 предложения) приветствовать пользователя по имени ({fullName}), упомянуть текущий день недели и предложить начать приключение \"или настроить расписание.\n" +
+            "Не пиши списки команд, это сделает сам бот программно. Только живое приветствие.\n" +
+            "Избегай сложных Markdown конструкций, используй только *жирный текст* если нужно.\n";
+
+        var userPrompt = $"Приветствую, {fullName}!";
+
+        return await GenerateAsync(userPrompt, systemPrompt, cancellationToken);
     }
 
     /// <summary>
@@ -136,4 +172,16 @@ public class OllamaService
             return string.Empty;
         return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }
+    
+    private static string GetRussianDayOfWeek(DayOfWeek day) => day switch
+    {
+        DayOfWeek.Monday => "понедельник",
+        DayOfWeek.Tuesday => "вторник",
+        DayOfWeek.Wednesday => "среда",
+        DayOfWeek.Thursday => "четверг",
+        DayOfWeek.Friday => "пятница",
+        DayOfWeek.Saturday => "суббота",
+        DayOfWeek.Sunday => "воскресенье",
+        _ => "день"
+    };
 }

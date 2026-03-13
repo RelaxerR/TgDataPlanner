@@ -5,6 +5,7 @@ using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using TgDataPlanner.AI;
 using TgDataPlanner.Common;
 using TgDataPlanner.Configuration;
 using TgDataPlanner.Data;
@@ -32,14 +33,16 @@ public class CommandHandler : BaseHandler
     /// <param name="db">Контекст базы данных</param>
     /// <param name="userService">Сервис управления пользователями.</param>
     /// <param name="schedulingService">Сервис расписания.</param>
+    /// <param name="ollamaService">Сервис ИИ</param>
     public CommandHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
         ILogger<CommandHandler> logger,
         AppDbContext db,
         UserService userService,
-        SchedulingService schedulingService)
-        : base(config, botClient, logger, db, userService, schedulingService)
+        SchedulingService schedulingService,
+        OllamaService ollamaService)
+        : base(config, botClient, logger, db, userService, schedulingService, ollamaService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -173,28 +176,72 @@ public class CommandHandler : BaseHandler
     }
 
     /// <summary>
-    /// Обрабатывает команду /start.
+    /// Обрабатывает команду /start с использованием AI для генерации приветствия.
     /// </summary>
     private async Task HandleStartCommandAsync(Message message, long userId, CancellationToken ct)
     {
         var isAdmin = IsAdmin(userId);
-        var welcomeText = isAdmin
-            ? BotConstants.PlayerMessages.WelcomeAdmin
-            : BotConstants.PlayerMessages.WelcomePlayer;
+        
+        var user = message.From;
+        var firstName = user?.FirstName ?? "Искатель";
+        var lastName = user?.LastName;
+        var username = user?.Username;
+
+        string? aiGreeting = null;
+
+        // Пытаемся получить приветствие от AI с таймаутом 3 секунды
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(3));
+
+        try
+        {
+            aiGreeting = await OllamaService.GeneratePersonalizedGreetingAsync(
+                firstName, 
+                lastName, 
+                username, 
+                isAdmin, 
+                cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Таймаут получения AI-приветствия для пользователя {UserId}", userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Ошибка получения AI-приветствия для пользователя {UserId}", userId);
+        }
+
+        string welcomeText;
+        
+        if (!string.IsNullOrEmpty(aiGreeting))
+        {
+            // Формируем сообщение с использованием константы и подстановкой ответа AI
+            var template = isAdmin 
+                ? BotConstants.AdminMessages.WelcomeAiAdminGreetingFallback 
+                : BotConstants.PlayerMessages.WelcomeAiGreetingFallback;
+            
+            welcomeText = string.Format(template, aiGreeting);
+        }
+        else
+        {
+            // Фоллбэк на стандартные сообщения
+            welcomeText = isAdmin
+                ? BotConstants.PlayerMessages.WelcomeAdmin + "\n\n"
+                : BotConstants.PlayerMessages.WelcomePlayer + "\n\n";
+        }
 
         var commands = new System.Text.StringBuilder();
         commands.AppendLine(BotConstants.Commands.CommandsList);
-
         if (isAdmin)
         {
             commands.AppendLine(BotConstants.Commands.AdminCommandsList);
             commands.AppendLine(BotConstants.Commands.ImportantNote);
         }
-
         commands.AppendLine(BotConstants.Commands.InDevelopment);
 
         var keyboard = CreateHelpKeyboard(isAdmin);
-        await SendToGroupChatAsync(message.Chat.Id, welcomeText + commands, keyboard, ct);
+
+        await SendToGroupChatAsync(message.Chat.Id, welcomeText + commands, keyboard, cts.Token);
     }
 
     /// <summary>

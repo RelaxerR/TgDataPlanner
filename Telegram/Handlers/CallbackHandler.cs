@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
+using TgDataPlanner.AI;
 using TgDataPlanner.Common;
 using TgDataPlanner.Configuration;
 using TgDataPlanner.Data;
@@ -37,6 +38,7 @@ public class CallbackHandler : BaseHandler
     /// <param name="planningService">Сервис планирования.</param>
     /// <param name="rsvpService">Сервис RSVP.</param>
     /// <param name="notificationService">Сервис уведомлений.</param>
+    /// <param name="ollamaService">Сервис ИИ</param>
     public CallbackHandler(
         IConfiguration config,
         ITelegramBotClient botClient,
@@ -46,8 +48,9 @@ public class CallbackHandler : BaseHandler
         SchedulingService schedulingService,
         SessionPlanningService planningService,
         RsvpService rsvpService,
-        GroupNotificationService notificationService)
-        : base(config, botClient, logger, db, userService, schedulingService)
+        GroupNotificationService notificationService,
+        OllamaService ollamaService)
+        : base(config, botClient, logger, db, userService, schedulingService, ollamaService)
     {
         _planningService = planningService ?? throw new ArgumentNullException(nameof(planningService));
         _rsvpService = rsvpService ?? throw new ArgumentNullException(nameof(rsvpService));

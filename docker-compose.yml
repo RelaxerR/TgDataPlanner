@@ -3,6 +3,8 @@ services:
   ollama:
     image: ollama/ollama
     container_name: ollama-ai
+    ports:
+      - "11434:11434"  # Пробрасываем порт на сервер для SSH-туннеля и локальной разработки
     volumes:
       - ollama-data:/root/.ollama
     networks:
@@ -11,7 +13,7 @@ services:
       resources:
         limits:
           cpus: '1.5'  # Оставляем 0.5 ядра системе и Foundry
-          memory: 2G   # На всякий случай ограничим по RAM
+          memory: 2G   # Ограничение RAM, чтобы сервер не «упал»
     restart: unless-stopped
 
   # Ваш .NET бот
@@ -24,7 +26,7 @@ services:
     environment:
       - TZ=Europe/Moscow
       - DOTNET_ENVIRONMENT=Production
-      - Ollama__BaseUrl=http://ollama:11434  # Передаем URL в конфиг .NET
+      - Ollama__BaseUrl=http://ollama:11434  # Внутри Docker-сети используем имя сервиса
     volumes:
       - bot-db:/app
       - ./appsettings.Production.json:/app/appsettings.Production.json:ro
@@ -41,7 +43,7 @@ services:
 volumes:
   bot-db:
     driver: local
-  ollama-data:      # Чтобы не качать модель заново при перезапуске
+  ollama-data:      # Сохраняем скачанные модели при перезапуске контейнера
 
 networks:
   bot-network:

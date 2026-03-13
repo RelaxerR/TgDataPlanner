@@ -104,6 +104,8 @@ namespace TgDataPlanner.Configuration
             public const string NoAdminsInGroup = "ℹ️ В группе нет Мастеров";
             public const string SessionInfoTitle = "📅 **ИНФОРМАЦИЯ О СЕССИИ: {0}**\n\n🗓️ **Дата и время:** {1}\n🕒 **Длительность:** {2} ч.\n📊 **Статус:** {3}\n\n✅ **Подтвердили ({4}/{5}):**\n{6}\n\n❌ **Не смогут ({7}/{8}):**\n{9}";
             public const string NoSessionScheduled = "ℹ️ **СЕССИЯ НЕ ЗАПЛАНИРОВАНА**\nДля группы **{0}** ещё не назначено время приключений.\nИспользуйте команду /request, чтобы собрать расписание героев.";
+            
+            public const string WelcomeAiAdminGreetingFallback = "🧙‍♂️ **Шёпот древних свитков:**\n{0}\n\n";
         }
         /// <summary>
         /// Сообщения, отображаемые обычным игрокам.
@@ -151,6 +153,9 @@ namespace TgDataPlanner.Configuration
             public const string YouHaveNotResponded = "⏳ Ещё не ответил";
             public const string HelpTitle = "❓ **ГРИМУАР ЗНАНИЙ (СПРАВКА)**";
             public const string HelpText = "🛡 **Приветствую, Искатель Приключений!**\n\nЯ — твой проводник в мире планирования сессий D&D.\nПозволь мне помочь тебе и твоей группе собраться для следующего эпического приключения!\n\n**📜 ДОСТУПНЫЕ КОМАНДЫ:**\n\n📅 **/free** — Открыть личный календарь и отметить свободные часы\n🌍 **/timezone** — Настроить свой часовой пояс\n👥 **/join** — Вступить в группу\n📊 **/status** — Проверить статус планирования\n👥 **/members** — Показать участников группы\n📅 **/session** — Информация о следующей сессии\n❓ **/help** — Показать эту справку\n\n**🧙 КОМАНДЫ МАСТЕРА:**\n\n/group — Создать новую группу\n/delgroup — Удалить группу\n/request — Запросить у игроков свободное время\n/plan — Найти идеальное время для игры\n/recommendations — Показать рекомендации\n/cancel — Отменить активную сессию\n\n**⚠️ ВАЖНО:**\nДля подтверждения сессии требуется **75% игроков + ВСЕ администраторы**\n\nПусть ваши кубы всегда падают критическим успехом! 🎲✨";
+            
+            public const string WelcomeAiGreetingFallback = "🤖 **Голос из кристалла:**\n{0}\n\n";
+            public const string AiGreetingErrorFallback = "⚠️ *Магия молчит...* Попробуем позже.\n\n";
         }
         /// <summary>
         /// Системные уведомления в основной чат.
@@ -167,6 +172,10 @@ namespace TgDataPlanner.Configuration
             public const string FreeTimeRequestedWithCancel = "🔔 Мастер запросил свободное время для группы **{0}**.\n\n⚠️ Предыдущая сессия отменена — требуется новое планирование!";
             public const string SessionConfirmedNotification = "🎉 **СЕССИЯ ПОДТВЕРЖДЕНА ДЛЯ ГРУППЫ {0}!**\n📅 {1}\n\nВсе игроки получат свитки с приглашением в личные сообщения.";
             public const string SessionReminder = "⏰ **НАПОМИНАНИЕ О СЕССИИ**\n\nГруппа: **{0}**\nВремя: **{1}**\n\nНе забудьте подтвердить участие! ⚔️";
+            
+            public const string AiServiceTimeout = "Таймаут ответа от нейросети ({0}с)";
+            public const string AiServiceError = "Ошибка сервиса AI: {0}";
+            public const string AiServiceSuccess = "Получен ответ от AI (длина: {0})";
         }
         /// <summary>
         /// Тексты кнопок и элементов интерфейса.
@@ -190,6 +199,10 @@ namespace TgDataPlanner.Configuration
             public const string TimeButtonFormat = "{0:D2}:00";
             public const string TimeButtonSelectedFormat = "✅ {0:D2}:00";
             public const string TimeButtonUnselectedFormat = "⬜️ {0:D2}:00";
+            
+            public const string AiRoleAssistant = "Ты — интеллектуальный ассистент бота TgDataPlanner, который помогает планирвоать игры. Тебя зовут Магистр Валериус.";
+            public const string AiRoleMasterHelper = "Ты — верный помощник Великого Мастера Подземелий. Тон уважительный, эпический, полезный.";
+            public const string AiRolePlayerGuide = "Ты — проводник для Искателя Приключений. Тон дружелюбный, воодушевляющий, таинственный.";
         }
         /// <summary>
         /// Шаблоны команд и их описания.
