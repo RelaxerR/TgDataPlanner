@@ -1,4 +1,20 @@
 services:
+  # Нейросеть Qwen
+  ollama:
+    image: ollama/ollama
+    container_name: ollama-ai
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - bot-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'  # Оставляем 0.5 ядра системе и Foundry
+          memory: 2G   # На всякий случай ограничим по RAM
+    restart: unless-stopped
+
+  # Ваш .NET бот
   tgbot:
     build:
       context: .
@@ -8,11 +24,14 @@ services:
     environment:
       - TZ=Europe/Moscow
       - DOTNET_ENVIRONMENT=Production
+      - Ollama__BaseUrl=http://ollama:11434  # Передаем URL в конфиг .NET
     volumes:
       - bot-db:/app
       - ./appsettings.Production.json:/app/appsettings.Production.json:ro
     networks:
       - bot-network
+    depends_on:
+      - ollama
     logging:
       driver: json-file
       options:
@@ -22,6 +41,7 @@ services:
 volumes:
   bot-db:
     driver: local
+  ollama-data:      # Чтобы не качать модель заново при перезапуске
 
 networks:
   bot-network:
