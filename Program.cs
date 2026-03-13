@@ -3,12 +3,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Telegram.Bot;
+using TgDataPlanner.AI;
 using TgDataPlanner.Data;
 using TgDataPlanner.Services;
 using TgDataPlanner.Telegram;
 using TgDataPlanner.Telegram.Handlers;
 using TgDataPlanner.Configuration;
+using Microsoft.Extensions.Http;
 
 namespace TgDataPlanner;
 
@@ -96,6 +99,25 @@ public static class Program
             var token = context.Configuration[$"{BotConfigSection}:{BotTokenKey}"]
                 ?? throw new InvalidOperationException(string.Format(BotConstants.SystemMessages.TokenNotFound, BotConfigSection, BotTokenKey));
             return new TelegramBotClient(token);
+        });
+        
+        // 2.5. Регистрация AI сервиса
+        
+        // Привязываем настройки AI из конфигурации
+        services.Configure<AiSettings>(context.Configuration.GetSection("AiSettings"));
+
+        // Регистрируем HttpClient для Ollama с правильным BaseAddress и Таймаутом
+        services.AddHttpClient<OllamaService>((sp, client) =>
+        {
+            var aiSettings = sp.GetRequiredService<IOptions<AiSettings>>().Value;
+        
+            // Для локальной разработки через SSH туннель здесь будет localhost,
+            // для Docker - http://ollama:11434 (если переменная окружения переопределена)
+            client.BaseAddress = new Uri(aiSettings.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
+        
+            // Можно добавить заголовки если нужно
+            // client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         });
 
         // 3. Регистрация DbContext (Scoped — один контекст на запрос/обработку)
