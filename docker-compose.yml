@@ -9,14 +9,14 @@ services:
     environment:
       - TZ=Europe/Moscow
       - DOTNET_ENVIRONMENT=Production
-      - Ollama__BaseUrl=http://ollama:11434  # Внутри Docker-сети используем имя сервиса
+      # Имя хоста должно быть точно таким же, как container_name в ~/infra
+      - Ollama__BaseUrl=http://ollama-ai:11434
     volumes:
       - bot-db:/app
       - ./appsettings.Production.json:/app/appsettings.Production.json:ro
     networks:
-      - bot-network
-    depends_on:
-      - ollama
+      - dnd-global-network
+    # depends_on: ollama больше не нужен, так как ollama в другом файле
     logging:
       driver: json-file
       options:
@@ -26,7 +26,6 @@ services:
 volumes:
   bot-db:
     driver: local
-  ollama-data:      # Сохраняем скачанные модели при перезапуске контейнера
 
 networks:
   dnd-global-network:
