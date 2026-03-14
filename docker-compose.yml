@@ -1,21 +1,4 @@
 services:
-  # Нейросеть Qwen
-  ollama:
-    image: ollama/ollama
-    container_name: ollama-ai
-    ports:
-      - "11434:11434"  # Пробрасываем порт на сервер для SSH-туннеля и локальной разработки
-    volumes:
-      - ollama-data:/root/.ollama
-    networks:
-      - bot-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1.5'  # Оставляем 0.5 ядра системе и Foundry
-          memory: 2G   # Ограничение RAM, чтобы сервер не «упал»
-    restart: unless-stopped
-
   # Ваш .NET бот
   tgbot:
     build:
@@ -28,7 +11,7 @@ services:
       - DOTNET_ENVIRONMENT=Production
       - Ollama__BaseUrl=http://ollama:11434  # Внутри Docker-сети используем имя сервиса
     volumes:
-      - bot-db:/app/Data
+      - bot-db:/app
       - ./appsettings.Production.json:/app/appsettings.Production.json:ro
     networks:
       - bot-network
@@ -46,5 +29,5 @@ volumes:
   ollama-data:      # Сохраняем скачанные модели при перезапуске контейнера
 
 networks:
-  bot-network:
-    driver: bridge
+  dnd-global-network:
+    external: true
