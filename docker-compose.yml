@@ -12,7 +12,8 @@ services:
       # Имя хоста должно быть точно таким же, как container_name в ~/infra
       - Ollama__BaseUrl=http://ollama-ai:11434
     volumes:
-      - bot-db:/app
+      # Пробрасываем только папку с базой данных
+      - bot-db:/app/data
       - ./appsettings.Production.json:/app/appsettings.Production.json:ro
     networks:
       - dnd-global-network
@@ -25,7 +26,8 @@ services:
 
 volumes:
   bot-db:
-    driver: local
+    external: true
+    name: tg-data-planner_bot-db
 
 networks:
   dnd-global-network:
