@@ -1006,7 +1006,7 @@ public class CallbackHandler : BaseHandler
         }
 
         await _notificationService.EditTextAsync(callbackQuery, BotConstants.PlayerMessages.DataSaved, ct: ct);
-        await _notificationService.NotifyMainChatAsync(string.Format(BotConstants.SystemNotifications.PlayerFinishedVoting, player.GetMarkdownUsername()), ct: ct);
+        await _notificationService.NotifyAllAdminsAsync(string.Format(BotConstants.SystemNotifications.PlayerFinishedVoting, player.GetMarkdownUsername()), ct: ct);
         await CheckGroupsReadinessAsync(groupsToCheck, ct);
         await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);
     }
@@ -1257,7 +1257,7 @@ public class CallbackHandler : BaseHandler
 
             var escapedGroupName = BotConstants.TextHelpers.EscapeMarkdown(addedGroup.Name ?? BotConstants.CallbackHandlerMessages.UnknownGroup);
             await _notificationService.EditTextAsync(callbackQuery, string.Format(BotConstants.PlayerMessages.JoinedGroup, escapedGroupName), ct: ct);
-            await _notificationService.NotifyMainChatAsync(string.Format(BotConstants.SystemNotifications.PlayerJoinedGroup, user.GetMarkdownUsername(), escapedGroupName), ct: ct);
+            await _notificationService.NotifyAllAdminsAsync(string.Format(BotConstants.SystemNotifications.PlayerJoinedGroup, user.GetMarkdownUsername(), escapedGroupName), ct: ct);
         }
 
         await _notificationService.AnswerCallbackAsync(callbackQuery, ct: ct);

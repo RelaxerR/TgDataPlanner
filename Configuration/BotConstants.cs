@@ -158,9 +158,9 @@ namespace TgDataPlanner.Configuration
         public static class SystemNotifications
         {
             public const string Prefix = "🔔 ";
-            public const string PlayerFinishedVoting = "🔔 **@{0}** завершил заполнение своего гримуара времени!";
+            public const string PlayerFinishedVoting = "🔔 **{0}** завершил заполнение своего гримуара времени!";
             public const string PlayerJoinedGroup = "⚔️ Герой **{0}** вступил в группу **{1}**!";
-            public const string GroupChanged = "⚠️ **СОСТАВ ГРУППЫ ИЗМЕНИЛСЯ**\nИгрок **@{0}** присоединился к группе **{1}**.\n\n🔄 Голосование сброшено — всем героям нужно заново заполнить расписание.";
+            public const string GroupChanged = "⚠️ **СОСТАВ ГРУППЫ ИЗМЕНИЛСЯ**\nИгрок **{0}** присоединился к группе **{1}**.\n\n";
             public const string TimeAssigned = "🎯 **ВРЕМЯ ИГРЫ НАЗНАЧЕНО!**\n\nБот-помощник автоматически подобрал ближайшее окно: **{0}**\n\nИгроки, проверьте личные сообщения от бота и подтвердите участие! ⚔️🎲";
             public const string NoTimeFound = "😔 **Группа {0}**: не найдено подходящего времени\nИгрокам будет отправлено уведомление с рекомендациями.";
             public const string FreeTimeRequested = "🔔 Мастер запросил свободное время для группы **{0}**. {1}";
